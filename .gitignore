@@ -1,0 +1,21 @@
+# Local SQLite database — never commit personal worklog data
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+worklog.db
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+.venv/
+venv/
+
+# Editor / OS
+.DS_Store
+*.swp
+*.swo
+.idea/
+.vscode/

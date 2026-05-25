@@ -1,0 +1,23 @@
+{
+  "name": "worklog",
+  "version": "0.1.0",
+  "description": "Personal worklog — track daily tasks, time entries, and meetings in SQLite; push to ClickUp.",
+  "author": {
+    "name": "Atul Mahankal",
+    "url": "https://github.com/atulmahankal-leapswitch"
+  },
+  "homepage": "https://github.com/atulmahankal-leapswitch/worklog",
+  "license": "MIT",
+  "hooks": {
+    "SessionEnd": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/log_session.py"
+          }
+        ]
+      }
+    ]
+  }
+}

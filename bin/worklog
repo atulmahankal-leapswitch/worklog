@@ -1,0 +1,221 @@
+#!/usr/bin/env python3
+"""worklog CLI — backs the /worklog:* slash commands.
+
+Subcommands:
+  init                       Create the SQLite database and tables.
+  add                        Add a task or timesheet entry.
+  show [date]                Show tasks + timesheet for date (default: today).
+  list-pending [date]        Print tasks not yet pushed to ClickUp, as JSON.
+  link-task <id> <cu-id>     Record ClickUp task id against a local task.
+  set-project-list <p> <id>  Map a project to a default ClickUp list id.
+
+Date forms: today | yesterday | YYYY-MM-DD
+"""
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from datetime import date as _date, datetime, timedelta
+from pathlib import Path
+
+# Allow importing the sibling lib/ package regardless of cwd
+ROOT = Path(__file__).resolve().parent.parent
+sys.path.insert(0, str(ROOT))
+
+from lib import db  # noqa: E402
+
+
+def parse_date(s: str | None) -> str:
+    if not s or s == "today":
+        return _date.today().isoformat()
+    if s == "yesterday":
+        return (_date.today() - timedelta(days=1)).isoformat()
+    # validate YYYY-MM-DD
+    return datetime.strptime(s, "%Y-%m-%d").date().isoformat()
+
+
+def hhmm_to_min(t: str) -> int:
+    h, m = t.split(":")
+    return int(h) * 60 + int(m)
+
+
+def cmd_init(_a):
+    db.init()
+    print(f"Initialised {db.db_path()}")
+
+
+def cmd_add(a):
+    if a.kind == "task":
+        tid = db.add_task(
+            project=a.project,
+            task=a.task,
+            date=parse_date(a.date),
+            reference=a.ref or "",
+            assigned=a.assigned or "",
+            status=a.status,
+            remark=a.remark or "",
+            source=a.source,
+        )
+        print(f"task #{tid} added")
+    else:
+        since, upto = a.since, a.upto
+        mins = hhmm_to_min(upto) - hhmm_to_min(since)
+        if mins < 0:
+            mins += 24 * 60
+        tid = db.add_timesheet(
+            date=parse_date(a.date),
+            since=since,
+            upto=upto,
+            minutes=mins,
+            project=a.project,
+            task=a.task,
+            ref=a.ref or "",
+            source=a.source,
+        )
+        print(f"timesheet #{tid} added ({mins // 60:02d}:{mins % 60:02d})")
+
+
+def _fmt_min(m: int) -> str:
+    return f"{m // 60:02d}:{m % 60:02d}"
+
+
+def cmd_show(a):
+    d = parse_date(a.date)
+    tasks = db.list_tasks(d)
+    ts = db.list_timesheet(d)
+
+    out = {"date": d, "tasks": [], "timesheet": [], "totals": {}}
+    for r in tasks:
+        out["tasks"].append({
+            "id": r["id"],
+            "project": r["project"],
+            "task": r["task"],
+            "status": r["status"],
+            "status_date": r["status_date"],
+            "reference": r["reference"],
+            "remark": r["remark"],
+            "source": r["source"],
+            "clickup_task_id": r["clickup_task_id"],
+        })
+    total_min = 0
+    for r in ts:
+        out["timesheet"].append({
+            "id": r["id"],
+            "since": r["since"],
+            "upto": r["upto"],
+            "duration": _fmt_min(r["minutes"]),
+            "minutes": r["minutes"],
+            "project": r["project"],
+            "task": r["task"],
+            "ref": r["ref"],
+            "source": r["source"],
+        })
+        total_min += r["minutes"]
+    out["totals"] = {
+        "tasks": len(tasks),
+        "done": sum(1 for r in tasks if r["status"] == "done"),
+        "minutes_logged": total_min,
+        "duration_logged": _fmt_min(total_min),
+    }
+
+    if a.format == "json":
+        print(json.dumps(out, indent=2))
+        return
+
+    print(f"# Worklog for {d}\n")
+    if tasks:
+        print("## Tasks")
+        for r in out["tasks"]:
+            mark = "x" if r["status"] == "done" else " "
+            cu = f" [cu:{r['clickup_task_id']}]" if r["clickup_task_id"] else ""
+            print(f"- [{mark}] {r['project']}: {r['task']} ({r['status']}){cu}")
+        print()
+    else:
+        print("_no tasks_\n")
+    if ts:
+        print("## Timesheet")
+        for r in out["timesheet"]:
+            print(f"- {r['since']}–{r['upto']} ({r['duration']}) {r['project']}: {r['task']}  _{r['source']}_")
+        print(f"\n**Total: {out['totals']['duration_logged']}**")
+    else:
+        print("_no time entries_")
+
+
+def cmd_list_pending(a):
+    d = parse_date(a.date)
+    rows = db.list_tasks(d)
+    pending = [
+        {
+            "id": r["id"],
+            "project": r["project"],
+            "task": r["task"],
+            "status": r["status"],
+            "reference": r["reference"],
+            "remark": r["remark"],
+            "clickup_list_id": r["clickup_list_id"],
+        }
+        for r in rows if not r["clickup_task_id"]
+    ]
+    print(json.dumps(pending, indent=2))
+
+
+def cmd_link_task(a):
+    db.update_task_clickup_id(a.task_id, a.clickup_id)
+    print(f"task #{a.task_id} linked to ClickUp {a.clickup_id}")
+
+
+def cmd_set_project_list(a):
+    db.set_project_clickup_list(a.project, a.list_id)
+    print(f"project '{a.project}' -> ClickUp list {a.list_id}")
+
+
+def build_parser() -> argparse.ArgumentParser:
+    p = argparse.ArgumentParser(prog="worklog")
+    sub = p.add_subparsers(dest="cmd", required=True)
+
+    sub.add_parser("init").set_defaults(func=cmd_init)
+
+    a = sub.add_parser("add")
+    a.add_argument("kind", choices=["task", "time"])
+    a.add_argument("--date", default="today")
+    a.add_argument("--project", required=True)
+    a.add_argument("--task", required=True)
+    a.add_argument("--ref", default="")
+    a.add_argument("--assigned", default="")
+    a.add_argument("--status", default="open")
+    a.add_argument("--remark", default="")
+    a.add_argument("--source", default="manual")
+    a.add_argument("--since")
+    a.add_argument("--upto")
+    a.set_defaults(func=cmd_add)
+
+    s = sub.add_parser("show")
+    s.add_argument("date", nargs="?", default="today")
+    s.add_argument("--format", choices=["text", "json"], default="text")
+    s.set_defaults(func=cmd_show)
+
+    lp = sub.add_parser("list-pending")
+    lp.add_argument("date", nargs="?", default="today")
+    lp.set_defaults(func=cmd_list_pending)
+
+    lt = sub.add_parser("link-task")
+    lt.add_argument("task_id", type=int)
+    lt.add_argument("clickup_id")
+    lt.set_defaults(func=cmd_link_task)
+
+    sp = sub.add_parser("set-project-list")
+    sp.add_argument("project")
+    sp.add_argument("list_id")
+    sp.set_defaults(func=cmd_set_project_list)
+
+    return p
+
+
+def main():
+    args = build_parser().parse_args()
+    args.func(args)
+
+
+if __name__ == "__main__":
+    main()
