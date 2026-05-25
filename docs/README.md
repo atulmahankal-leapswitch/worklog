@@ -19,11 +19,15 @@ worklog/
 ├── .claude-plugin/
 │   └── plugin.json              # Plugin manifest (name, version, SessionEnd hook)
 ├── commands/
-│   ├── show.md                  # /worklog:show           — list day's work
-│   ├── add.md                   # /worklog:add            — add task/time entry
-│   ├── push.md                  # /worklog:push           — sync to ClickUp
-│   ├── sync-calendar.md         # /worklog:sync-calendar  — pull Calendar/Read AI
-│   └── doctor.md                # /worklog:doctor         — health check
+│   ├── show.md                  # /worklog:show            — list day's work
+│   ├── add.md                   # /worklog:add             — manual timesheet entry
+│   ├── remove.md                # /worklog:remove          — delete by id
+│   ├── project_add.md           # /worklog:project_add     — track cwd for auto-log
+│   ├── project_remove.md        # /worklog:project_remove  — untrack cwd
+│   ├── projects.md              # /worklog:projects        — list projects + status
+│   ├── push.md                  # /worklog:push            — sync to ClickUp
+│   ├── sync-calendar.md         # /worklog:sync-calendar   — pull Calendar/Read AI
+│   └── doctor.md                # /worklog:doctor          — health check
 ├── hooks/
 │   └── log_session.py           # SessionEnd hook → appends a timesheet row
 ├── lib/

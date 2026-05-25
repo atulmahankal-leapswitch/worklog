@@ -1,34 +1,53 @@
 ---
-description: Remove a timesheet entry by id (or a task entry with `task #N`)
-argument-hint: "#<id>   (or `task #<id>` to remove from the tasks table)"
+description: Remove a timesheet (or task) entry by id — shows today's entries and asks if no id given
+argument-hint: "(empty to pick interactively)  OR  #<id>  OR  task #<id>"
 ---
 
-Remove a worklog entry by id from `$ARGUMENTS`.
+Remove a worklog entry.
 
-## Parsing
+## Behaviour
 
-- If `$ARGUMENTS` looks like `#<N>` or just `<N>` → remove from the
-  **timesheet** table (the default for the manual `/worklog:add` flow).
-- If `$ARGUMENTS` starts with `task` (e.g. `task #5`) → remove from the
-  **tasks** table instead.
+| Input              | What happens                                                       |
+|--------------------|--------------------------------------------------------------------|
+| Empty `$ARGUMENTS` | Show today's entries, ask which id to remove                       |
+| `#N` or `N`        | Remove timesheet entry id `N`                                      |
+| `task #N`          | Remove task entry id `N`                                           |
 
-If you're not sure which id the user means, first run
-`python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog show today` (or the relevant
-date) — both tables show ids — and confirm with the user.
+## Steps
 
-## Run
+1. **If `$ARGUMENTS` is empty:**
 
-For a timesheet entry:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog show today
+   ```
 
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog remove time <id>
+   Then ask: "Which entry to remove? (e.g. `5` for timesheet, `task 3`
+   for a task)." Re-enter step 1 with the user's reply.
+
+2. **Parse `$ARGUMENTS`:**
+   - Starts with `task` → remove from the tasks table.
+   - Otherwise (a bare number with optional `#`) → remove from timesheet.
+
+3. **Run:**
+
+   For a timesheet entry:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog remove time <id>
+   ```
+
+   For a task entry:
+   ```bash
+   python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog remove task <id>
+   ```
+
+4. Echo the CLI's confirmation. If "not found", suggest
+   `/worklog:show <date>` to look up the correct id.
+
+## Examples
+
 ```
-
-For a task entry:
-
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog remove task <id>
+/worklog:remove           # show + ask
+/worklog:remove 5         # delete timesheet #5
+/worklog:remove #5        # same
+/worklog:remove task #3   # delete tasks #3
 ```
-
-Echo the CLI's confirmation line. If the id wasn't found, suggest running
-`/worklog:show <date>` to find the correct id.

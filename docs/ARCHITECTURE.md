@@ -62,7 +62,8 @@ Each markdown file is a prompt template. Claude reads it when the user
 invokes `/worklog:<name>`, replaces `$ARGUMENTS`, and executes the steps
 described. The patterns are:
 
-- **CLI-backed commands** (`show`, `add`): shell out to
+- **CLI-backed commands** (`show`, `add`, `remove`, `projects`,
+  `project_add`, `project_remove`): shell out to
   `python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog …` and render output.
 - **MCP-backed commands** (`push`, `sync-calendar`, `doctor`): orchestrate
   ClickUp / Calendar / Gmail / Slack MCP tool calls, persisting results via
@@ -76,14 +77,18 @@ terminal.
 
 Argparse with subcommands:
 
-| Subcommand          | Purpose                                            |
-|---------------------|----------------------------------------------------|
-| `init`              | Create the DB schema (idempotent)                  |
-| `add task|time`     | Insert a task or timesheet row                     |
-| `show [date]`       | Render markdown or JSON for a date                 |
-| `list-pending [d]`  | Print tasks lacking a ClickUp id (JSON, for /push) |
-| `link-task`         | Record a ClickUp id against a local task          |
-| `set-project-list`  | Map a project → default ClickUp list id           |
+| Subcommand                    | Purpose                                                |
+|-------------------------------|--------------------------------------------------------|
+| `init`                        | Create / migrate the DB schema (idempotent)            |
+| `add task` / `add time`       | Insert a task or timesheet row                         |
+| `remove time <id>` / `task <id>` | Delete a row by id                                  |
+| `show [date]`                 | Render markdown or JSON for a date                     |
+| `projects [--format json]`    | List projects with path / exists / auto-log / last-active |
+| `project register --path …`   | Register a project (auto-log on; name defaults to basename) |
+| `project untrack --path …`    | Turn auto-log off for the project covering the path    |
+| `list-pending [d]`            | Print tasks lacking a ClickUp id (JSON, for /push)     |
+| `link-task`                   | Record a ClickUp id against a local task               |
+| `set-project-list`            | Map a project → default ClickUp list id                |
 
 The CLI uses absolute imports of `lib/` via a `sys.path.insert(0, ROOT)`
 trick at the top, so it runs whether invoked as `bin/worklog` or
@@ -94,7 +99,8 @@ trick at the top, so it runs whether invoked as `bin/worklog` or
 Plain `sqlite3`. Three tables:
 
 ```
-projects   id, name UNIQUE, coordinator, git_repo, clickup_list_id, created_at
+projects   id, name UNIQUE, path, coordinator, git_repo, clickup_list_id,
+           auto_log, created_at
 tasks      id, date, project_id FK→projects, task, reference,
            assigned, status, status_date, remark, source,
            clickup_task_id, created_at, updated_at
