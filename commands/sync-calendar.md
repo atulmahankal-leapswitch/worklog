@@ -47,15 +47,39 @@ the times as `scheduled`.
 ### 3. Ask the user which events to log
 
 Build a single multi-select question using `AskUserQuestion` with
-`multiSelect: true`. One option per event, label format:
+`multiSelect: true`. **Each option must show both the scheduled
+(calendar) time AND the actual (Read AI) time side-by-side** so the user
+can compare before ticking.
+
+Option **label** format (kept under 80 chars; truncate the title with `…`):
 
 ```
-HH:MM-HH:MM  <Event title>  (calendar|read-ai)
+SCHED <HH:MM-HH:MM>   |   ACTUAL <HH:MM-HH:MM | —>   <Event title>
 ```
 
-The `description` field should clarify the source — e.g.
-`"Scheduled time only — you did/didn't attend?"` or `"Read AI confirmed
-attendance"`. Pre-tick boxes only when Read AI confirms attendance.
+Where `ACTUAL` is one of:
+- `<HH:MM-HH:MM>` — Read AI recap found, user attended
+- `not attended` — Read AI recap found, user NOT in participants
+- `—` — no Read AI recap available
+
+Option **description** carries the source attribution and pre-tick hint:
+
+| Read AI signal                | Description text                                                       | Pre-ticked? |
+|-------------------------------|------------------------------------------------------------------------|-------------|
+| Recap found, user attended    | `Read AI confirmed — joined HH:MM, left HH:MM` (+ recap email link)    | yes         |
+| Recap found, user not present | `Read AI says you did not attend — confirm if you want to log anyway`  | no          |
+| No recap                      | `No Read AI recap — calendar-scheduled time only`                      | no          |
+
+So the user sees, in one row:
+1. What the calendar said (planned)
+2. What Read AI saw (reality), if known
+3. A pre-tick that reflects Read AI's verdict — overridable
+
+If the list would exceed `AskUserQuestion`'s 4-option limit, batch into
+multiple sequential questions (e.g. "events 1-4 of 7", "events 5-7 of 7").
+
+If `$ARGUMENTS` includes the literal `--all`, **skip the confirmation
+step** and append every kept event. Useful for unattended re-syncs.
 
 If the list would exceed `AskUserQuestion`'s 4-option limit, batch into
 multiple questions (or fall back to a numbered list and ask the user to

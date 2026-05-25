@@ -7,6 +7,7 @@ Index of documentation for the `worklog` Claude Code plugin.
 | [ARCHITECTURE.md](ARCHITECTURE.md)    | Internal design — storage, commands, hooks, integrations      |
 | [WORKFLOW.md](WORKFLOW.md)            | End-to-end daily workflow and per-command data flow           |
 | [INTEGRATIONS.md](INTEGRATIONS.md)    | Planned integrations (Google Meet attendance, Slack)          |
+| [READ-AI-SETUP.md](READ-AI-SETUP.md)  | One-time Read.ai + Google Meet setup so recaps reach worklog  |
 | This file                             | Repository layout (below) + index of the docs                 |
 
 For installation and basic usage see the top-level [README](../README.md).
