@@ -66,10 +66,19 @@ SQLite ships with the Python stdlib — no extra install.
 
 ## Install
 
-### 1. Clone the repo
+### 1. Install the plugin
 
-Clone to **any location you like** — the plugin uses `${CLAUDE_PLUGIN_ROOT}`
-so it works from wherever Claude Code registers it:
+Pick **one** of these two ways inside Claude Code:
+
+**From GitHub** (easiest):
+
+```
+/plugin marketplace add atulmahankal-leapswitch/worklog
+/plugin install worklog
+```
+
+**From a local clone** (recommended if you want to debug or enhance the
+plugin — edits take effect immediately, no re-install):
 
 ```bash
 git clone https://github.com/atulmahankal-leapswitch/worklog.git
@@ -77,31 +86,35 @@ cd worklog
 ./install.sh
 ```
 
-`install.sh` creates `~/.worklog/worklog.db` (override with `WORKLOG_HOME=…`)
-and prints the next steps.
-
-### 2. Enable as a Claude Code plugin
-
-Inside Claude Code, point `/plugin install` at the directory you cloned:
+then in Claude Code:
 
 ```
-/plugin install <path-to-cloned-repo>
+/plugin marketplace add <path-to-cloned-repo>
+/plugin install worklog
 ```
 
-This registers the slash commands (`/worklog:show`, `/worklog:add`,
-`/worklog:push`, `/worklog:sync-calendar`, `/worklog:doctor`) and the Stop
-hook.
+Either way, **restart Claude Code (or open a new session)** so the
+SessionEnd hook and slash commands load.
 
-### 3. Connect required integrations
+This registers `/worklog:show`, `/worklog:add`, `/worklog:remove`,
+`/worklog:project_add`, `/worklog:project_remove`, `/worklog:projects`,
+`/worklog:push`, `/worklog:sync-calendar`, `/worklog:doctor` and the
+SessionEnd hook.
 
-Inside Claude Code, run:
+### 2. Initialise & check
+
+Inside Claude Code:
 
 ```
 /worklog:doctor
 ```
 
-It tells you exactly what's connected and what's missing. For anything
-missing, run `/mcp` and connect the service.
+This creates `~/.worklog/worklog.db` on first call and reports which
+integrations are connected. For any FAIL row, run `/mcp` and connect that
+service.
+
+Override the DB location with the `WORKLOG_HOME` env var if you want it
+somewhere else.
 
 ---
 

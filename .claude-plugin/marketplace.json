@@ -1,0 +1,14 @@
+{
+  "name": "worklog",
+  "owner": {
+    "name": "Atul Mahankal",
+    "url": "https://github.com/atulmahankal-leapswitch"
+  },
+  "plugins": [
+    {
+      "name": "worklog",
+      "source": "./",
+      "description": "Track daily worklog (tasks, time, meetings) in SQLite and push to ClickUp."
+    }
+  ]
+}
