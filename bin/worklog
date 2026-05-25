@@ -241,6 +241,18 @@ def cmd_set_project_list(a):
     print(f"project '{a.project}' -> ClickUp list {a.list_id}")
 
 
+def _add_entry_common(parser, *, time_fields: bool = False):
+    """Args shared by every 'worklog add <kind>' subcommand."""
+    parser.add_argument("--date", default="today")
+    parser.add_argument("--project", required=True)
+    parser.add_argument("--task", required=True)
+    parser.add_argument("--ref", default="")
+    parser.add_argument("--source", default="manual")
+    if time_fields:
+        parser.add_argument("--since", required=True)
+        parser.add_argument("--upto", required=True)
+
+
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(prog="worklog")
     sub = p.add_subparsers(dest="cmd", required=True)
@@ -251,24 +263,14 @@ def build_parser() -> argparse.ArgumentParser:
     a_sub = a.add_subparsers(dest="kind", required=True)
 
     a_task = a_sub.add_parser("task", help="add a task")
-    a_task.add_argument("--date", default="today")
-    a_task.add_argument("--project", required=True)
-    a_task.add_argument("--task", required=True)
-    a_task.add_argument("--ref", default="")
+    _add_entry_common(a_task)
     a_task.add_argument("--assigned", default="")
     a_task.add_argument("--status", default="open")
     a_task.add_argument("--remark", default="")
-    a_task.add_argument("--source", default="manual")
     a_task.set_defaults(func=cmd_add_task)
 
     a_time = a_sub.add_parser("time", help="add a timesheet entry")
-    a_time.add_argument("--date", default="today")
-    a_time.add_argument("--project", required=True)
-    a_time.add_argument("--task", required=True)
-    a_time.add_argument("--since", required=True)
-    a_time.add_argument("--upto", required=True)
-    a_time.add_argument("--ref", default="")
-    a_time.add_argument("--source", default="manual")
+    _add_entry_common(a_time, time_fields=True)
     a_time.set_defaults(func=cmd_add_time)
 
     a_proj = a_sub.add_parser("project", help="register a project for auto-logging")

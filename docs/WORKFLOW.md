@@ -8,26 +8,25 @@ How a typical day flows through `worklog`. Read this if you want to know
 ## The big picture
 
 ```
-Morning                                           Evening
-   │                                                 │
-   ▼                                                 ▼
-┌────────────────────┐                       ┌────────────────────┐
-│ Plan: /worklog:add │  ── work happens ──▶  │ Review & push to   │
-│   task entries     │  (calendar meetings,  │ ClickUp            │
-│                    │   Claude sessions,    │  /worklog:show     │
-│                    │   manual edits)       │  /worklog:push     │
-└────────────────────┘                       └────────────────────┘
-       │                                              │
-       └──────────── one SQLite file ─────────────────┘
+Morning                                              Evening
+   │                                                    │
+   ▼                                                    ▼
+┌────────────────────┐                          ┌────────────────────┐
+│ /worklog:add quick │  ─── work happens ───▶   │ Review & push      │
+│  manual entries    │  (meetings, sessions,     │  /worklog:show     │
+│                    │   manual edits)           │  /worklog:push     │
+└────────────────────┘                          └────────────────────┘
+       │                                                  │
+       └──────────────── one SQLite file ─────────────────┘
 ```
 
 Three input streams feed the database:
 
-| Stream            | Where it comes from                          | How                                  |
-|-------------------|----------------------------------------------|--------------------------------------|
-| **Tasks**         | You typing `/worklog:add <text>`             | Claude parses → `worklog add task`   |
-| **Calendar time** | Google Calendar (optionally Read AI)         | `/worklog:sync-calendar`             |
-| **CLI sessions**  | Each Claude Code session that lasts ≥ 2 min  | SessionEnd hook → `add_timesheet()`        |
+| Stream             | Where it comes from                              | How                                                      |
+|--------------------|--------------------------------------------------|----------------------------------------------------------|
+| **Manual entries** | You typing `/worklog:add`                        | Pipe form or interactive prompts → `worklog add time`    |
+| **Calendar time**  | Google Calendar (optionally enriched by Read AI) | `/worklog:sync-calendar`                                 |
+| **CLI sessions**   | Each Claude Code session ≥ 2 min in a registered project | SessionEnd hook → `db.add_timesheet(source="claude-cli")` |
 
 One output stream:
 
@@ -39,23 +38,81 @@ One output stream:
 
 ## Command flow diagrams
 
-### `/worklog:add "LeapBuilder: fix login redirect, PR#42, status done"`
+### `/worklog:add LeapBuilder | fix login redirect | 10:00-11:30`
 
 ```
  user prompt
      │
      ▼
- commands/add.md          ── extract fields ──▶  project, task, date,
- (Claude parses)                                  ref, status, remark
+ commands/add.md
+   ├── if any field missing → ask the user one by one
+   └── split on '|' → project, task, time range, optional date
      │
      ▼
- bin/worklog add task --project … --task … --status done
+ bin/worklog add time --project … --task … --since 10:00 --upto 11:30
      │
      ▼
- lib.db.add_task() ──▶ INSERT INTO tasks (…)
+ lib.db.add_timesheet() ──▶ INSERT INTO timesheet
      │
      ▼
- echo "task #N added"
+ echo "timesheet #N added (01:30)"
+```
+
+### `/worklog:remove 5`
+
+```
+ commands/remove.md
+   ├── empty $ARGUMENTS → run `worklog show today`, ask which id
+   ├── starts with 'task' → remove from tasks
+   └── otherwise → remove from timesheet
+     │
+     ▼
+ bin/worklog remove time 5
+     │
+     ▼
+ lib.db.delete_timesheet(5)
+     │
+     ▼
+ echo "timesheet #5 removed"  (or "not found")
+```
+
+### `/worklog:project_add`
+
+```
+ commands/project_add.md
+   ├── name = $ARGUMENTS  or  basename(cwd)  (user can override)
+   └── confirm with the user
+     │
+     ▼
+ bin/worklog project register --path "$(pwd)" --name <chosen>
+     │
+     ▼
+ lib.db.add_project(path=…, auto_log=True)
+```
+
+### `/worklog:project_remove`
+
+```
+ commands/project_remove.md
+     │
+     ▼
+ bin/worklog project untrack --path "$(pwd)"
+     │
+     ▼
+ lib.db.set_project_auto_log_by_path(cwd, enabled=False)
+   (row preserved — only auto_log flips off)
+```
+
+### `/worklog:projects`
+
+```
+ bin/worklog projects
+     │
+     ▼
+ lib.db.list_projects_with_status() with LEFT JOIN to MAX(date)
+     │
+     ▼
+ markdown table — name, path, path-exists, auto-log, last active
 ```
 
 ### `/worklog:show today`
@@ -70,7 +127,7 @@ One output stream:
  lib.db.list_tasks(today) + list_timesheet(today)
      │
      ▼
- markdown table (rendered in Claude Code)
+ markdown sections — tasks, timesheet, totals
 ```
 
 ### `/worklog:push today`
@@ -79,25 +136,21 @@ One output stream:
  commands/push.md
      │
      ▼
- bin/worklog list-pending today   ──▶  JSON: [{id, project, task, …}, …]
+ bin/worklog list-pending today  ──▶  JSON pending tasks
      │
      ▼  for each pending task
  ┌───────────────────────────────────────────────────────┐
  │  ClickUp MCP: clickup_search "<task title>"           │
- │     ├── match found  ─▶ clickup_update_task           │
- │     └── no match     ─▶ need a List                   │
+ │    ├── match found  ─▶ clickup_update_task            │
+ │    └── no match     ─▶ create_task                    │
  │                         ├── project has list mapping? │
  │                         │     yes → use it            │
  │                         │     no  → ask user, then    │
  │                         │           set-project-list  │
- │                         └── clickup_create_task       │
  └───────────────────────────────────────────────────────┘
      │
      ▼
  bin/worklog link-task <local_id> <clickup_id>
-     │
-     ▼
- summary table
 ```
 
 ### `/worklog:sync-calendar today`
@@ -111,78 +164,82 @@ One output stream:
      ▼  for each accepted, non-all-day event
  ┌───────────────────────────────────────────────────────┐
  │  Gmail MCP: search Read AI recap for this meeting     │
- │     ├── found ─▶ extract actual start/end, attended?  │
- │     │              not attended → skip                │
- │     └── not found ─▶ use scheduled times              │
+ │    ├── found ─▶ extract actual start/end, attended?   │
+ │    │              not attended → skip                 │
+ │    └── not found ─▶ use scheduled times               │
  └───────────────────────────────────────────────────────┘
      │
      ▼
  bin/worklog add time --since … --upto … --project Meetings …
-     │
-     ▼
- lib.db.add_timesheet() with source="read-ai" or "calendar"
-   (dedupe on (date, since, task))
+   (dedup on date+since+task — safe to re-run)
 ```
 
-### SessionEnd hook (automatic)
+### SessionEnd hook (automatic, opt-in)
 
 ```
  user exits Claude Code (Ctrl+D / window close / /clear / /logout)
      │
      ▼  JSON payload on stdin
  hooks/log_session.py
-     │
-     ├── parse transcript JSONL
-     ├── skip if duration < 2 min
-     ├── extract first user prompt as task title
-     └── project = basename(cwd)
+   ├── parse transcript JSONL for first/last timestamps
+   ├── skip if duration < 2 min
+   ├── lookup db.find_project_by_path(cwd)
+   │     └── no match OR auto_log=0 → exit silently
+   └── task title = first user prompt of the session
      │
      ▼
- lib.db.add_timesheet(source="claude-cli")
+ lib.db.add_timesheet(source="claude-cli", ref="claude-cli:<reason>")
 ```
 
 ---
 
 ## A sample day
 
-| Time   | Action                                                | Effect                                     |
-|--------|-------------------------------------------------------|--------------------------------------------|
-| 09:00  | `/worklog:sync-calendar today`                        | Today's accepted meetings appear in timesheet |
-| 09:30  | Standup meeting happens (15 min)                      | Already in timesheet from sync             |
-| 10:00  | `/worklog:add "LeapBuilder: implement OTP, status in_progress"` | Task added                       |
-| 10:00  | Claude Code session begins on LeapBuilder repo        | (SessionEnd hook runs at end)                    |
-| 11:45  | Claude session ends after 1h 45m                      | Auto-logged to timesheet                   |
-| 13:00  | `/worklog:add "LeapBuilder: OTP done, PR#88"`         | Task updated/added; mark done              |
-| 17:30  | `/worklog:show today`                                 | Review the day                             |
-| 17:45  | `/worklog:push today`                                 | Tasks synced to ClickUp                    |
+| Time   | Action                                                      | Effect                                       |
+|--------|-------------------------------------------------------------|----------------------------------------------|
+| 08:55  | `cd ~/Documents/LeapBuilder && /worklog:project_add`        | Enables auto-log for this folder             |
+| 09:00  | `/worklog:sync-calendar today`                              | Meetings appear in timesheet                 |
+| 09:30  | Standup happens (15 min)                                    | Already logged from sync                     |
+| 10:00  | Claude Code session begins in LeapBuilder                   | (SessionEnd hook will run later)             |
+| 11:45  | Claude session ends after 1h 45m                            | Auto-logged to timesheet                     |
+| 13:00  | `/worklog:add LeapBuilder \| OTP done, PR#88 \| 12:30-13:00` | Manual timesheet row                         |
+| 17:30  | `/worklog:show today`                                       | Review the day                               |
+| 17:35  | `/worklog:remove 7`                                         | Drop a row that was logged by mistake        |
+| 17:45  | `/worklog:push today`                                       | Tasks synced to ClickUp                      |
 
-End of day: ClickUp is up to date; SQLite has the full history; nothing
-was retyped twice.
+End of day: ClickUp is current; SQLite has the full history; nothing was
+retyped twice.
 
 ---
 
 ## When to use which
 
-| Use case                                  | Command                       |
-|-------------------------------------------|-------------------------------|
-| Quick capture of a TODO                   | `/worklog:add`                |
-| Mark a task done                          | `/worklog:add` again with `status done` (Claude updates if matched) |
-| See what you did                          | `/worklog:show today` / `yesterday` / `2026-05-24` |
-| Sync the day's work to ClickUp            | `/worklog:push today`         |
-| Auto-log meeting attendance               | `/worklog:sync-calendar`      |
-| Set up a new project's ClickUp target     | first `/worklog:push` asks; or `bin/worklog set-project-list <p> <list_id>` |
-| Verify everything's connected             | `/worklog:doctor`             |
+| Use case                                       | Command                                       |
+|------------------------------------------------|-----------------------------------------------|
+| Log time you just worked                       | `/worklog:add` (pipe or interactive)          |
+| Drop an entry you didn't actually do           | `/worklog:remove <id>`                        |
+| Turn on auto-log for the current folder        | `/worklog:project_add`                        |
+| Stop auto-log for the current folder           | `/worklog:project_remove`                     |
+| See registered projects and their last activity| `/worklog:projects`                           |
+| See today's worklog                            | `/worklog:show today`                         |
+| Sync attended meetings                         | `/worklog:sync-calendar`                      |
+| Push to ClickUp                                | `/worklog:push today`                         |
+| Health-check integrations                      | `/worklog:doctor`                             |
 
 ---
 
 ## Gotchas
 
+- **Auto-log is opt-in per folder.** Sessions in folders that aren't
+  registered (or have `auto_log=0`) are silently skipped. Use
+  `/worklog:projects` to audit.
 - **Push is one-way.** Status changes you make later in ClickUp aren't
   pulled back into SQLite. Re-edit locally and re-push if needed.
 - **Read AI enrichment depends on Gmail.** If Gmail MCP is disconnected,
   `/worklog:sync-calendar` falls back to scheduled (not actual) times.
-- **SessionEnd hook fires on Ctrl+D, window close, `/clear`, and `/logout`** —
-  but not on `kill -9` or terminal crashes. Add any missed entry manually
-  with `/worklog:add`.
-- **Dedup is on `(date, since, task)`.** Re-running `sync-calendar` for the
-  same day is safe; renaming a calendar event will create a second row.
+- **SessionEnd hook fires on Ctrl+D, window close, `/clear`, and
+  `/logout`** — but not on `kill -9` or terminal crashes. Add any missed
+  entry manually with `/worklog:add`.
+- **Dedup is on `(date, since, task)`.** Re-running `sync-calendar` for
+  the same day is safe; renaming a calendar event will create a second
+  row.

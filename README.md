@@ -238,6 +238,22 @@ rm -rf <repo-path>       # wherever you cloned it
 
 ---
 
+## Development
+
+Run the test suite (`pytest`) from the repo root:
+
+```bash
+pip install --user --break-system-packages pytest    # one-time
+python3 -m pytest tests/ -q
+```
+
+Tests use a temp directory for `WORKLOG_HOME`, so your real `~/.worklog/`
+database is untouched.
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for internal design.
+
+---
+
 ## License
 
-MIT. See `LICENSE` (add one before publishing if needed).
+MIT — see [LICENSE](LICENSE).

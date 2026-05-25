@@ -39,7 +39,13 @@ worklog/
 │   ├── README.md                # ← you are here
 │   ├── ARCHITECTURE.md          # Internal design
 │   └── WORKFLOW.md              # Daily workflow walkthrough
+├── tests/
+│   ├── conftest.py              # Per-test isolated SQLite DB in tmp_path
+│   ├── test_db.py               # DAO + schema round-trips
+│   ├── test_hook.py             # SessionEnd hook subprocess integration
+│   └── README.md                # How to run the suite
 ├── install.sh                   # Initialises ~/.worklog/worklog.db + setup hints
+├── LICENSE                      # MIT
 ├── README.md                    # Quick start / install / usage
 └── .gitignore                   # Excludes *.db (no personal data in git)
 ```
