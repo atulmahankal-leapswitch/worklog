@@ -97,6 +97,14 @@ def _migrate(c: sqlite3.Connection):
         c.execute("ALTER TABLE projects ADD COLUMN auto_log INTEGER DEFAULT 1")
     c.execute("CREATE INDEX IF NOT EXISTS idx_projects_path ON projects(path)")
 
+    task_cols = {r["name"] for r in c.execute("PRAGMA table_info(tasks)")}
+    if "slack_message_ts" not in task_cols:
+        c.execute("ALTER TABLE tasks ADD COLUMN slack_message_ts TEXT")
+    if "slack_last_notified" not in task_cols:
+        c.execute("ALTER TABLE tasks ADD COLUMN slack_last_notified TEXT")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_tasks_reference ON tasks(reference)")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source)")
+
 
 def init():
     with connect() as c:
@@ -317,3 +325,83 @@ def delete_task(task_id: int) -> bool:
     with connect() as c:
         cur = c.execute("DELETE FROM tasks WHERE id=?", (task_id,))
         return cur.rowcount > 0
+
+
+def list_tasks_by_source(source: str) -> list[sqlite3.Row]:
+    """All tasks (any date) matching the given source tag."""
+    with connect() as c:
+        return c.execute(
+            """SELECT t.*, p.name AS project
+               FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
+               WHERE t.source = ?
+               ORDER BY t.id""",
+            (source,),
+        ).fetchall()
+
+
+def get_task_by_reference(reference: str) -> Optional[sqlite3.Row]:
+    with connect() as c:
+        return c.execute(
+            "SELECT * FROM tasks WHERE reference = ?", (reference,)
+        ).fetchone()
+
+
+_NOW_MS = "strftime('%Y-%m-%d %H:%M:%f', 'now')"
+# Sub-second precision so the (updated_at, slack_last_notified) ordering
+# survives rapid sequences in tests and in real-world quick edits.
+
+
+def update_task_status(task_id: int, status: str, remark: Optional[str] = None):
+    """Update status (and optionally remark). status_date set to today."""
+    today = _date.today().isoformat()
+    with connect() as c:
+        if remark is not None:
+            c.execute(
+                f"""UPDATE tasks
+                    SET status=?, status_date=?, remark=?, updated_at={_NOW_MS}
+                    WHERE id=?""",
+                (status, today, remark, task_id),
+            )
+        else:
+            c.execute(
+                f"""UPDATE tasks
+                    SET status=?, status_date=?, updated_at={_NOW_MS}
+                    WHERE id=?""",
+                (status, today, task_id),
+            )
+
+
+def set_task_slack_notified(task_id: int, message_ts: str):
+    """Record that this task's status was relayed to Slack at message_ts.
+
+    Deliberately does NOT touch updated_at so the queue logic
+    (`updated_at > slack_last_notified`) only re-fires when the *user*
+    changes status, not the notification itself."""
+    with connect() as c:
+        c.execute(
+            f"""UPDATE tasks
+                SET slack_message_ts=?, slack_last_notified={_NOW_MS}
+                WHERE id=?""",
+            (message_ts, task_id),
+        )
+
+
+def list_tasks_needing_slack_update() -> list[sqlite3.Row]:
+    """Slack-sourced tasks whose status has progressed past 'open' AND either
+    have never been notified, or have been updated since the last notification.
+
+    Newly-imported open tasks are deliberately excluded — Slack only hears
+    back about *status changes*, not the import itself."""
+    with connect() as c:
+        return c.execute(
+            """SELECT t.*, p.name AS project
+               FROM tasks t LEFT JOIN projects p ON p.id = t.project_id
+               WHERE t.source = 'slack'
+                 AND t.reference IS NOT NULL AND t.reference != ''
+                 AND t.status != 'open'
+                 AND (
+                       t.slack_last_notified IS NULL
+                       OR t.updated_at > t.slack_last_notified
+                     )
+               ORDER BY t.id"""
+        ).fetchall()

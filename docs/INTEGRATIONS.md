@@ -10,13 +10,17 @@ them up without re-deriving the design.
 | 🟡 planned    | designed here, not built                      |
 | 🔴 blocked    | needs an external dependency before starting  |
 
-| Feature                                  | Status   | Tracking |
-|------------------------------------------|----------|----------|
-| Calendar sync (scheduled times)          | 🟢 done | `commands/sync-calendar.md` |
-| Read AI enrichment via Gmail recap email | 🟢 done | `commands/sync-calendar.md` |
-| **Google Meet actual attendance**        | 🟡 planned | this doc |
-| **Slack — pick up new tasks**            | 🟡 planned | this doc |
-| **Slack — update task status**           | 🟡 planned | this doc |
+| Feature                                  | Status      | Tracking |
+|------------------------------------------|-------------|----------|
+| Calendar sync (scheduled times)          | 🟢 done    | `commands/sync-calendar.md` |
+| Read AI enrichment via Gmail recap email | 🟢 done    | `commands/sync-calendar.md` |
+| Meet link in timesheet `ref`             | 🟢 done    | `commands/sync-calendar.md` (conferenceData parse) |
+| **Google Meet actual attendance**        | 🔴 blocked | needs Gmail MCP data tools or Meet REST API |
+| **Slack — pick up new tasks**            | 🟢 done    | `commands/slack-inbox.md` |
+| **Slack — update task status**           | 🟢 done    | `commands/slack-update.md` |
+| Read AI MCP — direct meeting fetch       | 🟡 planned | Section 3 — replaces Gmail-recap path when MCP exposes data tools     |
+| Google Calendar MCP — write-back         | 🟡 planned | Section 4 — push response/status changes back to events               |
+| Google Meet MCP — attendance via MCP     | 🟡 planned | Section 5 — replaces CSV scraping when an official Meet MCP ships     |
 
 ---
 
@@ -188,6 +192,150 @@ columns only.
 | `/worklog:slack-inbox`   | 1 day    | New slash command + minor schema use |
 | `/worklog:slack-update`  | 1 day    | Schema migration + new slash command |
 | Tests for both           | 0.5 day  | Mock Slack MCP responses             |
+
+---
+
+## 3. Read AI MCP — direct meeting fetch (when ready)
+
+### Why
+
+Today the Read AI MCP only exposes `authenticate` / `complete_authentication`
+— no data-read tools. So `/worklog:sync-calendar` falls back to **scraping
+the Read AI recap email out of Gmail**: fragile, slow, and dependent on
+the recap actually arriving.
+
+When Read AI's MCP exposes data tools (expected names below — adjust to
+real ones at integration time) we can replace the Gmail scrape with a
+direct call.
+
+### Expected MCP tools we'll need
+
+| Tool                                          | Used for                                          |
+|-----------------------------------------------|---------------------------------------------------|
+| `mcp__claude_ai_Read_AI__list_meetings`       | Discover meetings the user attended on a date     |
+| `mcp__claude_ai_Read_AI__get_meeting`         | Fetch a single meeting's start/end/participants   |
+| `mcp__claude_ai_Read_AI__list_participants`   | (Or embedded in `get_meeting`) confirm attendance |
+
+### Migration plan when ready
+
+1. **Detect availability** — in `/worklog:doctor`, add a check: call
+   `list_meetings` with `limit: 1` and a date range; if it succeeds,
+   mark Read AI MCP as PASS for *data* (not just auth).
+2. **Branch the sync** — `/worklog:sync-calendar` already has a "Read AI
+   enrichment" step. Replace its Gmail search with:
+   ```
+   list_meetings(after=date, before=date+1)
+       └── match by event title / start time
+       └── get_meeting(id) → start, end, participants
+   ```
+3. **Keep the Gmail fallback** — if Read AI MCP fails (offline, scope
+   missing), fall through to the existing Gmail-recap parser. Never
+   regress users who only have email recaps.
+4. **Test fixture** — add a mock Read AI MCP response in
+   `tests/test_sync_calendar.py` (new file) covering: attended, not
+   attended, missing meeting.
+
+### Effort
+
+~0.5 day once the MCP tool names are known. Mostly mechanical — replaces
+one helper function in the sync-calendar prompt.
+
+---
+
+## 4. Google Calendar MCP — write-back
+
+### Why
+
+Today we only **read** from Calendar. Two write paths would be useful:
+
+| Use case                                      | Outbound action                                                                     |
+|-----------------------------------------------|-------------------------------------------------------------------------------------|
+| User confirms attendance in `/worklog:sync-calendar` | Update the event's `attendees[me].responseStatus = "accepted"` if it was `tentative` |
+| User declines in the picker                   | Set `responseStatus = "declined"` so the organiser sees the cancellation             |
+| Worklog task with `status=done`               | (Optional) Mark the source meeting as ✅ in its description                         |
+| Worklog task scheduled to a future slot       | (Optional) Create a calendar event for blocked focus time                            |
+
+### Expected MCP tools
+
+The Google Calendar MCP already exposes write tools (we just don't use
+them yet):
+
+- `mcp__claude_ai_Google_Calendar__update_event` — patch a field
+- `mcp__claude_ai_Google_Calendar__respond_to_event` — set RSVP status
+- `mcp__claude_ai_Google_Calendar__create_event`
+
+### Migration plan when ready
+
+1. Add a `--write-back` flag to `/worklog:sync-calendar`. Default off.
+2. When the user finishes the multi-select picker:
+   - For ticked events whose current `responseStatus` was `tentative`,
+     call `respond_to_event(eventId, "accepted")`.
+   - For unticked events, optionally call `respond_to_event(eventId,
+     "declined")` (behind an additional confirm prompt — destructive).
+3. New slash command `/worklog:calendar-block` for the "create blocked
+   focus slot from a task" flow. Out of scope for the first iteration.
+
+### Schema
+
+No DB changes. Calendar event ids are deterministic per event so we don't
+need to store them.
+
+### Effort
+
+~0.5 day for response status write-back. Focus-block creation is ~1 more
+day if/when needed.
+
+---
+
+## 5. Google Meet MCP — attendance via MCP (when ready)
+
+### Why
+
+Today there is **no Google Meet MCP**. Attendance can only be obtained by
+parsing the Workspace admin attendance-report CSV from Gmail — which
+itself is blocked because the Gmail MCP doesn't expose
+attachment-download tools (see section 1).
+
+If Anthropic ships a Google Meet MCP (or Google's official one) it would
+unblock end-to-end actual-attendance tracking.
+
+### Expected MCP tools
+
+Guessing the shape based on Meet's REST API
+(`v2.meet.googleapis.com/conferenceRecords/*`):
+
+| Tool                                                | Used for                                          |
+|-----------------------------------------------------|---------------------------------------------------|
+| `mcp__claude_ai_Google_Meet__list_conference_records` | Find meetings the user attended on a date         |
+| `mcp__claude_ai_Google_Meet__list_participants`     | Per-participant join/leave times                  |
+| `mcp__claude_ai_Google_Meet__get_recording`         | (Optional) recording URL for the row's `ref`      |
+
+### Migration plan when ready
+
+1. Add a `mcp__claude_ai_Google_Meet__list_conference_records` probe to
+   `/worklog:doctor`.
+2. Insert as **step 2.5** in `/worklog:sync-calendar`, between Read AI
+   enrichment and the multi-select picker:
+   - For each accepted calendar event with a Meet link, look up the
+     matching conference record (match by `meetCode` extracted from the
+     hangout URL).
+   - Pull the user's join + leave time; pre-tick the option only if the
+     user actually attended.
+   - Use the join/leave window as `--since` / `--upto` (overriding
+     scheduled times).
+3. Order of precedence for actual attendance, highest to lowest:
+   - Google Meet MCP (most authoritative)
+   - Read AI MCP (when section 3 lands)
+   - Read AI recap email via Gmail (current path)
+   - Calendar scheduled times (fallback, user confirms via picker)
+
+### Schema
+
+No DB changes — `--source meet` tag is enough.
+
+### Effort
+
+~1 day once the MCP is available. Wraps existing sync-calendar logic.
 
 ---
 

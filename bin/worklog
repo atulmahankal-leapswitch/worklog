@@ -241,6 +241,58 @@ def cmd_link_task(a):
     print(f"task #{a.task_id} linked to ClickUp {a.clickup_id}")
 
 
+def cmd_tasks_by_source(a):
+    rows = db.list_tasks_by_source(a.source)
+    print(json.dumps(
+        [{
+            "id": r["id"],
+            "date": r["date"],
+            "project": r["project"],
+            "task": r["task"],
+            "status": r["status"],
+            "reference": r["reference"],
+            "slack_message_ts": r["slack_message_ts"],
+            "slack_last_notified": r["slack_last_notified"],
+        } for r in rows],
+        indent=2,
+    ))
+
+
+def cmd_has_reference(a):
+    row = db.get_task_by_reference(a.reference)
+    if row:
+        print(row["id"])
+        return 0
+    return 1
+
+
+def cmd_update_status(a):
+    db.update_task_status(a.task_id, a.status, remark=a.remark)
+    print(f"task #{a.task_id} -> {a.status}")
+
+
+def cmd_link_slack(a):
+    db.set_task_slack_notified(a.task_id, a.message_ts)
+    print(f"task #{a.task_id} marked slack-notified ({a.message_ts})")
+
+
+def cmd_list_slack_pending(_a):
+    rows = db.list_tasks_needing_slack_update()
+    print(json.dumps(
+        [{
+            "id": r["id"],
+            "project": r["project"],
+            "task": r["task"],
+            "status": r["status"],
+            "reference": r["reference"],
+            "remark": r["remark"],
+            "slack_message_ts": r["slack_message_ts"],
+            "slack_last_notified": r["slack_last_notified"],
+        } for r in rows],
+        indent=2,
+    ))
+
+
 def cmd_set_project_list(a):
     db.set_project_clickup_list(a.project, a.list_id)
     print(f"project '{a.project}' -> ClickUp list {a.list_id}")
@@ -328,6 +380,33 @@ def build_parser() -> argparse.ArgumentParser:
     lt.add_argument("clickup_id")
     lt.set_defaults(func=cmd_link_task)
 
+    tbs = sub.add_parser("tasks-by-source",
+                         help="list all tasks (any date) with a given source tag")
+    tbs.add_argument("source")
+    tbs.set_defaults(func=cmd_tasks_by_source)
+
+    hr = sub.add_parser("has-reference",
+                        help="check if any task already has this reference; prints id and exits 0 if yes")
+    hr.add_argument("reference")
+    hr.set_defaults(func=cmd_has_reference)
+
+    us = sub.add_parser("update-status",
+                        help="update a task's status and status_date")
+    us.add_argument("task_id", type=int)
+    us.add_argument("status")
+    us.add_argument("--remark", default=None)
+    us.set_defaults(func=cmd_update_status)
+
+    ls = sub.add_parser("link-slack",
+                        help="mark a task as notified to Slack at message_ts")
+    ls.add_argument("task_id", type=int)
+    ls.add_argument("message_ts")
+    ls.set_defaults(func=cmd_link_slack)
+
+    lsp = sub.add_parser("list-slack-pending",
+                         help="JSON list of Slack-sourced tasks whose status changed since last notification")
+    lsp.set_defaults(func=cmd_list_slack_pending)
+
     sp = sub.add_parser("set-project-list")
     sp.add_argument("project")
     sp.add_argument("list_id")
@@ -338,7 +417,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main():
     args = build_parser().parse_args()
-    args.func(args)
+    rc = args.func(args)
+    sys.exit(rc or 0)
 
 
 if __name__ == "__main__":

@@ -1,3 +1,4 @@
+import time
 from datetime import date
 
 from lib import db
@@ -87,3 +88,80 @@ def test_list_projects_with_status_shows_last_active(tmp_path):
     assert len(rows) == 1
     assert rows[0]["last_active"] == "2026-03-15"
     assert rows[0]["auto_log"] == 1
+
+
+# --- Slack inbox / update helpers ---
+
+def test_list_tasks_by_source_filters():
+    db.add_task(project="P", task="manual one", source="manual")
+    db.add_task(project="P", task="slack one", source="slack",
+                reference="https://x/p1")
+    db.add_task(project="P", task="slack two", source="slack",
+                reference="https://x/p2")
+
+    rows = db.list_tasks_by_source("slack")
+    assert len(rows) == 2
+    assert {r["reference"] for r in rows} == {"https://x/p1", "https://x/p2"}
+
+
+def test_get_task_by_reference_roundtrip():
+    db.add_task(project="P", task="t", source="slack",
+                reference="https://x/perm")
+    hit = db.get_task_by_reference("https://x/perm")
+    miss = db.get_task_by_reference("https://x/missing")
+    assert hit is not None
+    assert hit["task"] == "t"
+    assert miss is None
+
+
+def test_update_task_status_sets_status_date():
+    tid = db.add_task(project="P", task="t")
+    db.update_task_status(tid, "done", remark="merged")
+    row = db.list_tasks(date.today().isoformat())[0]
+    assert row["id"] == tid
+    assert row["status"] == "done"
+    assert row["remark"] == "merged"
+    assert row["status_date"] is not None
+
+
+def test_slack_update_queue_excludes_open_and_notified():
+    # Open task — not yet notified, but status==open → excluded.
+    db.add_task(project="P", task="just imported", source="slack",
+                reference="https://x/p1")
+    # In-progress, never notified → should appear.
+    in_prog = db.add_task(project="P", task="working", source="slack",
+                          reference="https://x/p2", status="in_progress")
+    # Done, never notified → should appear.
+    done = db.add_task(project="P", task="merged", source="slack",
+                       reference="https://x/p3", status="done")
+
+    pending_ids = {r["id"] for r in db.list_tasks_needing_slack_update()}
+    assert in_prog in pending_ids
+    assert done in pending_ids
+    assert len(pending_ids) == 2  # open one excluded
+
+    # After notifying `done`, it falls out of the queue.
+    db.set_task_slack_notified(done, "1700000000.000001")
+    pending_ids = {r["id"] for r in db.list_tasks_needing_slack_update()}
+    assert done not in pending_ids
+    assert in_prog in pending_ids
+
+
+def test_slack_update_queue_reappears_on_status_change():
+    tid = db.add_task(project="P", task="t", source="slack",
+                      reference="https://x/p1", status="in_progress")
+    db.set_task_slack_notified(tid, "ts1")
+    assert db.list_tasks_needing_slack_update() == []
+
+    # SQLite timestamps are millisecond-resolution; ensure the next write's
+    # `updated_at` lands strictly after the notification timestamp.
+    time.sleep(0.01)
+    db.update_task_status(tid, "done")
+    pending_ids = {r["id"] for r in db.list_tasks_needing_slack_update()}
+    assert tid in pending_ids
+
+
+def test_slack_update_queue_skips_non_slack_source():
+    db.add_task(project="P", task="manual done", source="manual",
+                status="done")
+    assert db.list_tasks_needing_slack_update() == []

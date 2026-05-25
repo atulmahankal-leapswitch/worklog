@@ -20,6 +20,15 @@ Keep only events where:
 - user's `responseStatus` is `accepted` or `tentative` (skip `declined`)
 - not all-day (has `start.dateTime`, not just `start.date`)
 
+For each kept event, also extract the **Google Meet link** if present:
+- `event.hangoutLink`, or
+- `event.conferenceData.entryPoints[].uri` where `entryPointType == "video"`.
+
+This URL becomes the row's `--ref` so the timesheet entry links back to the
+meeting. The Calendar MCP cannot tell us *actual* attendance — that needs
+Read AI (step 2) or a Workspace admin attendance report (see
+`docs/INTEGRATIONS.md`).
+
 ### 2. Enrich with Read AI recap (when Gmail MCP available)
 
 For each event, search Gmail for the matching Read AI recap email:

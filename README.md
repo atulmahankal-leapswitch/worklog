@@ -19,7 +19,9 @@ push it.
 | `/worklog:project_remove`                                | Turn off auto-logging for the current directory (keeps history)        |
 | `/worklog:projects`                                      | List registered projects — path, exists, auto-log, last active         |
 | `/worklog:push [date]`                                   | Push that day's tasks to ClickUp (create new / update existing)        |
-| `/worklog:sync-calendar [date]`                          | Pull Google Calendar events into the timesheet (Read AI aware)         |
+| `/worklog:sync-calendar [date]`                          | Pull Google Calendar events into the timesheet (Read AI aware, asks before append) |
+| `/worklog:slack-inbox [hours]`                           | Pull recent Slack mentions / DMs as a multi-select; ticked items become tasks |
+| `/worklog:slack-update`                                  | Reply in the original Slack thread when a Slack-sourced task's status changes  |
 | `/worklog:doctor`                                        | Check that required integrations are healthy                           |
 
 Plus an automatic **SessionEnd hook** that logs each Claude Code session
@@ -206,16 +208,6 @@ Run `bin/worklog -h` for the full reference.
 
 ---
 
-## Further reading
-
-See [`docs/`](docs/README.md) for:
-
-- Repository layout
-- Architecture (internal design)
-- Daily workflow walkthrough
-
----
-
 ## Uninstall
 
 Inside Claude Code:
@@ -233,19 +225,14 @@ rm -rf ~/.worklog
 
 ---
 
-## Development
+## Further reading
 
-Run the test suite (`pytest`) from the repo root:
+See [`docs/`](docs/README.md) for:
 
-```bash
-pip install --user --break-system-packages pytest    # one-time
-python3 -m pytest tests/ -q
-```
-
-Tests use a temp directory for `WORKLOG_HOME`, so your real `~/.worklog/`
-database is untouched.
-
-See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for internal design.
+- Repository layout
+- Architecture (internal design)
+- Daily workflow walkthrough
+- Planned integrations (Google Meet, Slack)
 
 ---
 
