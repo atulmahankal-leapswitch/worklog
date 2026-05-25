@@ -202,17 +202,20 @@ def cmd_show(a):
         for r in out["tasks"]:
             mark = "x" if r["status"] == "done" else " "
             cu = f" [cu:{r['clickup_task_id']}]" if r["clickup_task_id"] else ""
-            print(f"- [{mark}] {r['project']}: {r['task']} ({r['status']}){cu}")
+            print(f"- `#{r['id']}`  [{mark}] {r['project']}: {r['task']} ({r['status']}){cu}")
         print()
     else:
         print("_no tasks_\n")
     if ts:
         print("## Timesheet")
         for r in out["timesheet"]:
-            print(f"- {r['since']}–{r['upto']} ({r['duration']}) {r['project']}: {r['task']}  _{r['source']}_")
+            print(f"- `#{r['id']}`  {r['since']}–{r['upto']} ({r['duration']}) {r['project']}: {r['task']}  _{r['source']}_")
         print(f"\n**Total: {out['totals']['duration_logged']}**")
     else:
         print("_no time entries_")
+    if tasks or ts:
+        print("\n_Use `/worklog:remove <id>` to drop a timesheet row, "
+              "or `/worklog:remove task <id>` for a task._")
 
 
 def cmd_list_pending(a):
