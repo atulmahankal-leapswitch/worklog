@@ -14,7 +14,9 @@ Run:
 python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog init
 ```
 
-PASS if the command prints `Initialised …/worklog.db`.
+PASS if the command prints either `Initialised …/worklog.db` (fresh DB)
+or `Already initialised at …/worklog.db` (DB already present — the normal
+case after first run).
 
 ### 2. ClickUp MCP — **REQUIRED** for `/worklog:push`
 

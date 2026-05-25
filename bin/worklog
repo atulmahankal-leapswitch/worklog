@@ -41,8 +41,10 @@ def hhmm_to_min(t: str) -> int:
 
 
 def cmd_init(_a):
+    path = db.db_path()
+    pre_existed = path.exists() and path.stat().st_size > 0
     db.init()
-    print(f"Initialised {db.db_path()}")
+    print(f"{'Already initialised at' if pre_existed else 'Initialised'} {path}")
 
 
 def cmd_add_task(a):
