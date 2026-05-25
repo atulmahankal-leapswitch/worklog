@@ -293,3 +293,27 @@ def set_project_auto_log(name: str, enabled: bool):
     with connect() as c:
         c.execute("UPDATE projects SET auto_log=? WHERE name=?",
                   (1 if enabled else 0, name))
+
+
+def set_project_auto_log_by_path(path: str, enabled: bool) -> Optional[sqlite3.Row]:
+    """Find the registered project covering `path` and toggle its auto_log.
+    Returns the matched project row (after the update) or None if no match."""
+    match = find_project_by_path(path)
+    if not match:
+        return None
+    with connect() as c:
+        c.execute("UPDATE projects SET auto_log=? WHERE id=?",
+                  (1 if enabled else 0, match["id"]))
+        return c.execute("SELECT * FROM projects WHERE id=?", (match["id"],)).fetchone()
+
+
+def delete_timesheet(ts_id: int) -> bool:
+    with connect() as c:
+        cur = c.execute("DELETE FROM timesheet WHERE id=?", (ts_id,))
+        return cur.rowcount > 0
+
+
+def delete_task(task_id: int) -> bool:
+    with connect() as c:
+        cur = c.execute("DELETE FROM tasks WHERE id=?", (task_id,))
+        return cur.rowcount > 0

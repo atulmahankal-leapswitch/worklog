@@ -12,27 +12,38 @@ push it.
 
 | Command                          | What it does                                                   |
 |----------------------------------|----------------------------------------------------------------|
-| `/worklog:show [date]`           | Show tasks and time entries for a date                         |
-| `/worklog:add <free-text>`       | Add a task, time entry, or **register a project** from a sentence |
-| `/worklog:projects`              | List registered projects with path, existence, auto-log, last active |
-| `/worklog:push [date]`           | Push that day's tasks to ClickUp (create new / update existing)|
-| `/worklog:sync-calendar [date]`  | Pull Google Calendar events into the timesheet (Read AI aware) |
-| `/worklog:doctor`                | Check that required integrations are healthy                   |
+| `/worklog:show [date]`                                   | Show tasks and time entries for a date                                 |
+| `/worklog:add <project>\|<task>\|<HH:MM>-<HH:MM>[\|date]` | Add a manual timesheet entry                                           |
+| `/worklog:remove #<id>`                                  | Remove a timesheet entry (or `task #<id>` for the tasks table)         |
+| `/worklog:project_add [name]`                            | Register the current directory as a project for auto-logging           |
+| `/worklog:project_remove`                                | Turn off auto-logging for the current directory (keeps history)        |
+| `/worklog:projects`                                      | List registered projects — path, exists, auto-log, last active         |
+| `/worklog:push [date]`                                   | Push that day's tasks to ClickUp (create new / update existing)        |
+| `/worklog:sync-calendar [date]`                          | Pull Google Calendar events into the timesheet (Read AI aware)         |
+| `/worklog:doctor`                                        | Check that required integrations are healthy                           |
 
 Plus an automatic **SessionEnd hook** that logs each Claude Code session
 (≥ 2 min) as a single timesheet row tagged `claude-cli` when you exit
 (Ctrl+D, close VS Code window, `/clear`, `/logout`).
 
 **Auto-logging is opt-in per directory.** Only sessions whose working
-directory falls under a registered project's `path` are logged. Register a
-folder with:
+directory falls under a registered project's `path` are logged. To
+enable it for a folder:
 
 ```
-/worklog:add register project "LeapBuilder" at /home/atul/Documents/LeapBuilder
+cd /path/to/your/project
+/worklog:project_add               # uses cwd; project name defaults to folder name
+/worklog:project_add LeapBuilder   # override the name
 ```
 
-…or pass `--no-auto-log` when registering to keep the project but skip
-the auto-log (useful for sandbox/testing folders).
+To stop auto-logging (e.g. for testing/sandbox folders) without losing
+history:
+
+```
+/worklog:project_remove
+```
+
+Run `/worklog:projects` to see the current status.
 
 `date` accepts `today`, `yesterday`, or `YYYY-MM-DD`.
 

@@ -111,6 +111,42 @@ def cmd_projects(a):
         print(f"| {r['id']} | {r['name']} | `{path}` | {exists} | {autolog} | {last} |")
 
 
+def cmd_remove_time(a):
+    ok = db.delete_timesheet(a.id)
+    print(f"timesheet #{a.id} removed" if ok else f"timesheet #{a.id} not found")
+    return 0 if ok else 1
+
+
+def cmd_remove_task(a):
+    ok = db.delete_task(a.id)
+    print(f"task #{a.id} removed" if ok else f"task #{a.id} not found")
+    return 0 if ok else 1
+
+
+def cmd_project_register(a):
+    from pathlib import Path as _Path
+    path = str(_Path(a.path).expanduser().resolve())
+    name = a.name or _Path(path).name
+    pid = db.add_project(
+        name=name,
+        path=path,
+        coordinator=a.coordinator or "",
+        git_repo=a.repo or "",
+        auto_log=True,
+    )
+    print(f"project #{pid} '{name}' registered at {path} (auto-log: on)")
+
+
+def cmd_project_untrack(a):
+    from pathlib import Path as _Path
+    path = str(_Path(a.path).expanduser().resolve())
+    row = db.set_project_auto_log_by_path(path, enabled=False)
+    if not row:
+        print(f"no project registered covering {path}")
+        return 1
+    print(f"project '{row['name']}' ({row['path']}) — auto-log now OFF")
+
+
 def _fmt_min(m: int) -> str:
     return f"{m // 60:02d}:{m % 60:02d}"
 
@@ -247,6 +283,29 @@ def build_parser() -> argparse.ArgumentParser:
     pr = sub.add_parser("projects", help="list registered projects with status")
     pr.add_argument("--format", choices=["text", "json"], default="text")
     pr.set_defaults(func=cmd_projects)
+
+    rm = sub.add_parser("remove", help="remove a task or timesheet entry by id")
+    rm_sub = rm.add_subparsers(dest="kind", required=True)
+    rm_time = rm_sub.add_parser("time", help="remove a timesheet entry")
+    rm_time.add_argument("id", type=int)
+    rm_time.set_defaults(func=cmd_remove_time)
+    rm_task = rm_sub.add_parser("task", help="remove a task entry")
+    rm_task.add_argument("id", type=int)
+    rm_task.set_defaults(func=cmd_remove_task)
+
+    proj = sub.add_parser("project", help="register / untrack a project by path")
+    proj_sub = proj.add_subparsers(dest="action", required=True)
+    proj_reg = proj_sub.add_parser("register",
+                                   help="register a project for auto-logging (defaults name to basename of path)")
+    proj_reg.add_argument("--path", required=True)
+    proj_reg.add_argument("--name")
+    proj_reg.add_argument("--coordinator", default="")
+    proj_reg.add_argument("--repo", default="")
+    proj_reg.set_defaults(func=cmd_project_register)
+    proj_unt = proj_sub.add_parser("untrack",
+                                   help="turn auto-logging off for the project covering this path")
+    proj_unt.add_argument("--path", required=True)
+    proj_unt.set_defaults(func=cmd_project_untrack)
 
     s = sub.add_parser("show")
     s.add_argument("date", nargs="?", default="today")
