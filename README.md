@@ -68,33 +68,15 @@ SQLite ships with the Python stdlib — no extra install.
 
 ### 1. Install the plugin
 
-Pick **one** of these two ways inside Claude Code:
-
-**From GitHub** (easiest):
+Inside Claude Code:
 
 ```
 /plugin marketplace add atulmahankal-leapswitch/worklog
 /plugin install worklog
 ```
 
-**From a local clone** (recommended if you want to debug or enhance the
-plugin — edits take effect immediately, no re-install):
-
-```bash
-git clone https://github.com/atulmahankal-leapswitch/worklog.git
-cd worklog
-./install.sh
-```
-
-then in Claude Code:
-
-```
-/plugin marketplace add <path-to-cloned-repo>
-/plugin install worklog
-```
-
-Either way, **restart Claude Code (or open a new session)** so the
-SessionEnd hook and slash commands load.
+Then **restart Claude Code (or open a new session)** so the SessionEnd
+hook and slash commands load.
 
 This registers `/worklog:show`, `/worklog:add`, `/worklog:remove`,
 `/worklog:project_add`, `/worklog:project_remove`, `/worklog:projects`,
@@ -240,13 +222,13 @@ Inside Claude Code:
 
 ```
 /plugin uninstall worklog
+/plugin marketplace remove worklog
 ```
 
-Then optionally remove the data and the cloned repo:
+Then optionally remove the local database:
 
 ```bash
-rm -rf ~/.worklog        # local database
-rm -rf <repo-path>       # wherever you cloned it
+rm -rf ~/.worklog
 ```
 
 ---
