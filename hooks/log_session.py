@@ -97,12 +97,22 @@ def main() -> int:
     if dur_sec < MIN_DURATION_SEC:
         return 0
 
-    project = Path(cwd).name or "Claude CLI"
+    try:
+        db.init()
+    except Exception as e:
+        print(f"worklog log_session: {e}", file=sys.stderr)
+        return 0
+
+    # Only log if cwd is a registered project with auto_log enabled.
+    match = db.find_project_by_path(cwd)
+    if not match or not match["auto_log"]:
+        return 0
+    project = match["name"]
+
     task = first_user_prompt(events) or "Claude Code session"
     mins = int(dur_sec // 60)
 
     try:
-        db.init()
         db.add_timesheet(
             date=start.date().isoformat(),
             since=start.strftime("%H:%M"),

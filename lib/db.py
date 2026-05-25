@@ -32,9 +32,11 @@ SCHEMA = """
 CREATE TABLE IF NOT EXISTS projects (
     id              INTEGER PRIMARY KEY AUTOINCREMENT,
     name            TEXT NOT NULL UNIQUE,
+    path            TEXT,
     coordinator     TEXT,
     git_repo        TEXT,
     clickup_list_id TEXT,
+    auto_log        INTEGER DEFAULT 1,
     created_at      TEXT DEFAULT CURRENT_TIMESTAMP
 );
 
@@ -86,9 +88,20 @@ def connect():
         conn.close()
 
 
+def _migrate(c: sqlite3.Connection):
+    """Idempotent ALTER TABLE migrations for older DBs."""
+    cols = {r["name"] for r in c.execute("PRAGMA table_info(projects)")}
+    if "path" not in cols:
+        c.execute("ALTER TABLE projects ADD COLUMN path TEXT")
+    if "auto_log" not in cols:
+        c.execute("ALTER TABLE projects ADD COLUMN auto_log INTEGER DEFAULT 1")
+    c.execute("CREATE INDEX IF NOT EXISTS idx_projects_path ON projects(path)")
+
+
 def init():
     with connect() as c:
         c.executescript(SCHEMA)
+        _migrate(c)
 
 
 def get_or_create_project(name: str, conn: Optional[sqlite3.Connection] = None) -> int:
@@ -197,3 +210,86 @@ def set_project_clickup_list(project: str, list_id: str):
 def get_project(name: str) -> Optional[sqlite3.Row]:
     with connect() as c:
         return c.execute("SELECT * FROM projects WHERE name=?", (name,)).fetchone()
+
+
+def _abs(path: Optional[str]) -> Optional[str]:
+    if not path:
+        return None
+    return str(Path(path).expanduser().resolve())
+
+
+def add_project(
+    *,
+    name: str,
+    path: Optional[str] = None,
+    coordinator: str = "",
+    git_repo: str = "",
+    auto_log: bool = True,
+) -> int:
+    """Register or update a project. Returns project id."""
+    abs_path = _abs(path)
+    with connect() as c:
+        row = c.execute("SELECT id FROM projects WHERE name=?", (name,)).fetchone()
+        if row:
+            c.execute(
+                """UPDATE projects
+                   SET path        = COALESCE(?, path),
+                       coordinator = COALESCE(NULLIF(?, ''), coordinator),
+                       git_repo    = COALESCE(NULLIF(?, ''), git_repo),
+                       auto_log    = ?
+                   WHERE id = ?""",
+                (abs_path, coordinator, git_repo, 1 if auto_log else 0, row["id"]),
+            )
+            return row["id"]
+        cur = c.execute(
+            """INSERT INTO projects(name, path, coordinator, git_repo, auto_log)
+               VALUES (?, ?, ?, ?, ?)""",
+            (name, abs_path, coordinator, git_repo, 1 if auto_log else 0),
+        )
+        return cur.lastrowid
+
+
+def find_project_by_path(cwd: str) -> Optional[sqlite3.Row]:
+    """Find a registered project whose path equals or is a parent of cwd.
+    Longest-prefix match wins so nested registrations work."""
+    target = Path(_abs(cwd))
+    with connect() as c:
+        rows = c.execute(
+            "SELECT * FROM projects WHERE path IS NOT NULL AND path != ''"
+        ).fetchall()
+    best: Optional[sqlite3.Row] = None
+    best_len = -1
+    for r in rows:
+        try:
+            p = Path(r["path"])
+        except Exception:
+            continue
+        if target == p or p in target.parents:
+            if len(str(p)) > best_len:
+                best = r
+                best_len = len(str(p))
+    return best
+
+
+def list_projects_with_status() -> list[sqlite3.Row]:
+    """Projects with their last activity date (max of tasks.date and timesheet.date)."""
+    with connect() as c:
+        return c.execute(
+            """SELECT p.id, p.name, p.path, p.coordinator, p.git_repo,
+                      p.auto_log, p.clickup_list_id, p.created_at,
+                      (
+                        SELECT MAX(d) FROM (
+                          SELECT MAX(date) AS d FROM tasks      WHERE project_id = p.id
+                          UNION ALL
+                          SELECT MAX(date) AS d FROM timesheet  WHERE project_id = p.id
+                        )
+                      ) AS last_active
+               FROM projects p
+               ORDER BY p.name"""
+        ).fetchall()
+
+
+def set_project_auto_log(name: str, enabled: bool):
+    with connect() as c:
+        c.execute("UPDATE projects SET auto_log=? WHERE name=?",
+                  (1 if enabled else 0, name))

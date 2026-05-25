@@ -45,35 +45,70 @@ def cmd_init(_a):
     print(f"Initialised {db.db_path()}")
 
 
-def cmd_add(a):
-    if a.kind == "task":
-        tid = db.add_task(
-            project=a.project,
-            task=a.task,
-            date=parse_date(a.date),
-            reference=a.ref or "",
-            assigned=a.assigned or "",
-            status=a.status,
-            remark=a.remark or "",
-            source=a.source,
-        )
-        print(f"task #{tid} added")
-    else:
-        since, upto = a.since, a.upto
-        mins = hhmm_to_min(upto) - hhmm_to_min(since)
-        if mins < 0:
-            mins += 24 * 60
-        tid = db.add_timesheet(
-            date=parse_date(a.date),
-            since=since,
-            upto=upto,
-            minutes=mins,
-            project=a.project,
-            task=a.task,
-            ref=a.ref or "",
-            source=a.source,
-        )
-        print(f"timesheet #{tid} added ({mins // 60:02d}:{mins % 60:02d})")
+def cmd_add_task(a):
+    tid = db.add_task(
+        project=a.project,
+        task=a.task,
+        date=parse_date(a.date),
+        reference=a.ref or "",
+        assigned=a.assigned or "",
+        status=a.status,
+        remark=a.remark or "",
+        source=a.source,
+    )
+    print(f"task #{tid} added")
+
+
+def cmd_add_time(a):
+    since, upto = a.since, a.upto
+    mins = hhmm_to_min(upto) - hhmm_to_min(since)
+    if mins < 0:
+        mins += 24 * 60
+    tid = db.add_timesheet(
+        date=parse_date(a.date),
+        since=since,
+        upto=upto,
+        minutes=mins,
+        project=a.project,
+        task=a.task,
+        ref=a.ref or "",
+        source=a.source,
+    )
+    print(f"timesheet #{tid} added ({mins // 60:02d}:{mins % 60:02d})")
+
+
+def cmd_add_project(a):
+    pid = db.add_project(
+        name=a.name,
+        path=a.path,
+        coordinator=a.coordinator or "",
+        git_repo=a.repo or "",
+        auto_log=not a.no_auto_log,
+    )
+    where = f" at {a.path}" if a.path else ""
+    autolog = "on" if not a.no_auto_log else "off"
+    print(f"project #{pid} '{a.name}' registered{where} (auto-log: {autolog})")
+
+
+def cmd_projects(a):
+    from pathlib import Path as _Path
+    rows = db.list_projects_with_status()
+    if a.format == "json":
+        print(json.dumps([dict(r) for r in rows], indent=2))
+        return
+    if not rows:
+        print("_no projects registered yet — use `worklog add project --name X --path /repo`_")
+        return
+    print("| #  | Project | Path | Path exists | Auto-log | Last active |")
+    print("|----|---------|------|-------------|----------|-------------|")
+    for r in rows:
+        path = r["path"] or "—"
+        exists = "—"
+        if r["path"]:
+            exists = "yes" if _Path(r["path"]).exists() else "**no**"
+        autolog = "on" if r["auto_log"] else "off"
+        last = r["last_active"] or "—"
+        print(f"| {r['id']} | {r['name']} | `{path}` | {exists} | {autolog} | {last} |")
 
 
 def _fmt_min(m: int) -> str:
@@ -177,18 +212,41 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("init").set_defaults(func=cmd_init)
 
     a = sub.add_parser("add")
-    a.add_argument("kind", choices=["task", "time"])
-    a.add_argument("--date", default="today")
-    a.add_argument("--project", required=True)
-    a.add_argument("--task", required=True)
-    a.add_argument("--ref", default="")
-    a.add_argument("--assigned", default="")
-    a.add_argument("--status", default="open")
-    a.add_argument("--remark", default="")
-    a.add_argument("--source", default="manual")
-    a.add_argument("--since")
-    a.add_argument("--upto")
-    a.set_defaults(func=cmd_add)
+    a_sub = a.add_subparsers(dest="kind", required=True)
+
+    a_task = a_sub.add_parser("task", help="add a task")
+    a_task.add_argument("--date", default="today")
+    a_task.add_argument("--project", required=True)
+    a_task.add_argument("--task", required=True)
+    a_task.add_argument("--ref", default="")
+    a_task.add_argument("--assigned", default="")
+    a_task.add_argument("--status", default="open")
+    a_task.add_argument("--remark", default="")
+    a_task.add_argument("--source", default="manual")
+    a_task.set_defaults(func=cmd_add_task)
+
+    a_time = a_sub.add_parser("time", help="add a timesheet entry")
+    a_time.add_argument("--date", default="today")
+    a_time.add_argument("--project", required=True)
+    a_time.add_argument("--task", required=True)
+    a_time.add_argument("--since", required=True)
+    a_time.add_argument("--upto", required=True)
+    a_time.add_argument("--ref", default="")
+    a_time.add_argument("--source", default="manual")
+    a_time.set_defaults(func=cmd_add_time)
+
+    a_proj = a_sub.add_parser("project", help="register a project for auto-logging")
+    a_proj.add_argument("--name", required=True)
+    a_proj.add_argument("--path", help="absolute path to project root (enables auto-log when cwd matches)")
+    a_proj.add_argument("--coordinator", default="")
+    a_proj.add_argument("--repo", default="")
+    a_proj.add_argument("--no-auto-log", action="store_true",
+                        help="register but skip the SessionEnd auto-log for this path")
+    a_proj.set_defaults(func=cmd_add_project)
+
+    pr = sub.add_parser("projects", help="list registered projects with status")
+    pr.add_argument("--format", choices=["text", "json"], default="text")
+    pr.set_defaults(func=cmd_projects)
 
     s = sub.add_parser("show")
     s.add_argument("date", nargs="?", default="today")
