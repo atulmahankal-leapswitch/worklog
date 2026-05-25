@@ -20,9 +20,12 @@ push it.
 | `/worklog:projects`                                      | List registered projects — path, exists, auto-log, last active         |
 | `/worklog:push [date]`                                   | Push that day's tasks to ClickUp (create new / update existing)        |
 | `/worklog:sync-calendar [date]`                          | Pull Google Calendar events into the timesheet (Read AI aware, asks before append) |
-| `/worklog:slack-inbox [hours]`                           | Pull recent Slack mentions / DMs as a multi-select; ticked items become tasks |
-| `/worklog:slack-update`                                  | Reply in the original Slack thread when a Slack-sourced task's status changes  |
 | `/worklog:doctor`                                        | Check that required integrations are healthy                           |
+
+> **Slack integration is paused.** First-pass `/worklog:slack-inbox` and
+> `/worklog:slack-update` are kept in `commands.disabled/` until the
+> filtering and project-guess heuristics are reworked — see
+> [`docs/INTEGRATIONS.md`](docs/INTEGRATIONS.md) for the known issues.
 
 Plus an automatic **SessionEnd hook** that logs each Claude Code session
 (≥ 2 min) as a single timesheet row tagged `claude-cli` when you exit

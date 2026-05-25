@@ -16,8 +16,8 @@ them up without re-deriving the design.
 | Read AI enrichment via Gmail recap email | 🟢 done    | `commands/sync-calendar.md` |
 | Meet link in timesheet `ref`             | 🟢 done    | `commands/sync-calendar.md` (conferenceData parse) |
 | **Google Meet actual attendance**        | 🔴 blocked | needs Gmail MCP data tools or Meet REST API |
-| **Slack — pick up new tasks**            | 🟢 done    | `commands/slack-inbox.md` |
-| **Slack — update task status**           | 🟢 done    | `commands/slack-update.md` |
+| **Slack — pick up new tasks**            | 🟡 paused  | `commands.disabled/slack-inbox.md` — heuristics need rework |
+| **Slack — update task status**           | 🟡 paused  | `commands.disabled/slack-update.md` — depends on inbox       |
 | Read AI MCP — direct meeting fetch       | 🟡 planned | Section 3 — replaces Gmail-recap path when MCP exposes data tools     |
 | Google Calendar MCP — write-back         | 🟡 planned | Section 4 — push response/status changes back to events               |
 | Google Meet MCP — attendance via MCP     | 🟡 planned | Section 5 — replaces CSV scraping when an official Meet MCP ships     |
@@ -185,12 +185,48 @@ ALTER TABLE tasks ADD COLUMN slack_last_notified TEXT;
 Add to `_migrate()` in `lib/db.py`; bump no version number — additive
 columns only.
 
+### Known issues (paused until fixed)
+
+First-pass `/worklog:slack-inbox` was shipped, used, and **paused**
+because the candidate list was noisy. Fix these before re-enabling.
+
+1. **Surfaces messages not addressed to the user.**
+   The Slack search query `"<@USER_ID> after:<date>"` matches any message
+   the user is mentioned in — including channel-wide pings and FYIs.
+   Need stricter filtering, e.g. `to:<@USER_ID>` for DMs, plus a check
+   that the user is the *primary* recipient (not just CC'd).
+
+2. **"Guessed project: Inbox" is misleading.**
+   When the heuristic finds no match, the picker still shows
+   "Guessed project: Inbox" — implying confidence. Either omit the line
+   entirely when there's no match, or replace with "(no match — will
+   default to Inbox)" so the user knows it's a placeholder.
+
+3. **"↳ reply by …" line is always rendered.**
+   Currently shown even when the candidate is the root message itself,
+   producing a misleading "reply by <self>". Only render this line when
+   we genuinely fetched a different root via `slack_read_thread`.
+
+4. **Project guess must improve.**
+   Even with channel-name matching, channels like
+   `#order-delivery-coordinations` don't map to any project. The
+   heuristic should: (a) look for project names in the *first paragraph*
+   of the root message, (b) prompt the user to map unknown channels to
+   projects on first encounter (persisting in a new
+   `projects.slack_channel` column).
+
+5. **De-noise by reaction or save state.**
+   Optional: only surface messages the user has explicitly bookmarked
+   (`saved-for-later`) or reacted to with a configurable emoji
+   (e.g. `:todo:`). This is far higher-signal than @-mention scraping.
+
 ### Effort
 
 | Sub-feature              | Estimate | Notes                                |
 |--------------------------|----------|--------------------------------------|
-| `/worklog:slack-inbox`   | 1 day    | New slash command + minor schema use |
-| `/worklog:slack-update`  | 1 day    | Schema migration + new slash command |
+| Rework filter + heuristics | 1 day  | Fix issues 1–4 above                 |
+| `/worklog:slack-inbox`   | (built — needs rework) | First-pass in `commands.disabled/` |
+| `/worklog:slack-update`  | (built)  | Depends on inbox being trustworthy   |
 | Tests for both           | 0.5 day  | Mock Slack MCP responses             |
 
 ---
