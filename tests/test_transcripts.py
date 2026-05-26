@@ -110,6 +110,42 @@ def test_first_user_prompt_skips_command_noise(tmp_path):
     assert chunk.first_prompt == "deploy main branch to production"
 
 
+def test_first_user_prompt_skips_is_meta_events(tmp_path):
+    """isMeta=True events are Claude-Code-injected (auto-resume prompts,
+    slash-command body templates) — never user-typed."""
+    events = [
+        {"timestamp": _ts(2026, 5, 26, 9, 41), "isMeta": True,
+         "message": {"role": "user", "content": "Continue from where you left off."}},
+        {"timestamp": _ts(2026, 5, 26, 9, 41), "isMeta": True,
+         "message": {"role": "user",
+                     "content": "Register the **current working directory** as a worklog project so that"}},
+        {"timestamp": _ts(2026, 5, 26, 9, 42), "isMeta": False,
+         "message": {"role": "user", "content": "deploy main branch to prod"}},
+    ]
+    p = _write_transcript(tmp_path, events)
+    chunk = transcripts.latest_session(p)
+    assert chunk.first_prompt == "deploy main branch to prod"
+
+
+def test_first_user_prompt_skips_interrupt_and_compaction_markers(tmp_path):
+    events = [
+        {"timestamp": _ts(2026, 5, 26, 9, 41),
+         "message": {"role": "user",
+                     "content": "[Request interrupted by user for tool use]"}},
+        {"timestamp": _ts(2026, 5, 26, 9, 42),
+         "message": {"role": "user",
+                     "content": "This session is being continued from a previous conversation that ran out of context. The summary…"}},
+        {"timestamp": _ts(2026, 5, 26, 9, 43),
+         "message": {"role": "user",
+                     "content": "<local-command-stdout>Compacted (ctrl+o to see full summary)</local-command-stdout>"}},
+        {"timestamp": _ts(2026, 5, 26, 9, 44),
+         "message": {"role": "user", "content": "fix OAuth redirect"}},
+    ]
+    p = _write_transcript(tmp_path, events)
+    chunk = transcripts.latest_session(p)
+    assert chunk.first_prompt == "fix OAuth redirect"
+
+
 def test_first_user_prompt_handles_block_content(tmp_path):
     events = [
         {"timestamp": _ts(2026, 5, 26, 9, 41),

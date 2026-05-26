@@ -573,11 +573,11 @@ def cmd_update_status(a):
 
 
 def cmd_rescan_titles(a):
-    """Re-title claude-cli timesheet rows whose task is a known resume
-    placeholder by re-scanning the project's transcripts."""
+    """Re-title claude-cli timesheet rows whose current task is Claude Code
+    boilerplate (resume prompt, command caveat, interrupt marker, compaction
+    notice, etc.) by re-scanning the project's transcripts."""
     from lib import transcripts
     target = parse_date(a.date)
-    placeholders = {"continue from where you left off", "continue", "resume"}
 
     rows = db.list_timesheet(target)
     if not rows:
@@ -588,13 +588,19 @@ def cmd_rescan_titles(a):
         proj_path = {r["id"]: r["path"] for r in
                      c.execute("SELECT id, path FROM projects")}
 
+    def needs_rescan(title: str) -> bool:
+        if not title:
+            return True
+        if title.strip() == "Claude Code session":
+            return True
+        return transcripts._is_noise(title)
+
     updated, kept, no_match = 0, 0, 0
     for r in rows:
         if r["source"] != "claude-cli":
             kept += 1
             continue
-        current = (r["task"] or "").strip().lower().rstrip(".!? ").strip()
-        if current not in placeholders:
+        if not needs_rescan(r["task"] or ""):
             kept += 1
             continue
         ppath = proj_path.get(r["project_id"])
@@ -619,10 +625,10 @@ def cmd_rescan_titles(a):
             if new_title is not None:
                 break
 
-        normalised_new = (new_title or "").strip().lower().rstrip(".!? ").strip()
-        if not new_title or normalised_new in placeholders:
-            no_match += 1
-            continue
+        # If the transcript chunk yields nothing useful either, fall back
+        # to a neutral placeholder so the noisy old title doesn't survive.
+        if not new_title or needs_rescan(new_title):
+            new_title = "Claude Code session"
 
         db.update_timesheet_task(r["id"], new_title)
         print(f"  #{r['id']}: {new_title[:90]}")

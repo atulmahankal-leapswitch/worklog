@@ -18,11 +18,17 @@ SESSION_GAP_MINUTES = 30
 """Idle gap that separates two sessions inside one JSONL transcript."""
 
 _NOISE_PREFIXES = (
-    "<local-command-caveat>",
+    # All <local-command-*> wrapper tags Claude Code injects around shell I/O:
+    # <local-command-caveat>, <local-command-stdout>, <local-command-stderr>.
+    "<local-command-",
     "<command-name>",
     "<command-message>",
     "<system-reminder>",
     "Caveat:",
+    # Claude Code interrupt markers
+    "[Request interrupted by user",
+    # Compaction-restore boilerplate Claude Code prepends after /compact
+    "This session is being continued from a previous conversation",
 )
 
 # Auto-generated prompts Claude Code injects on session resume. Comparing
@@ -111,11 +117,20 @@ def _event_text(e: dict) -> str:
 
 
 def first_user_prompt(events: Iterable[dict]) -> str:
-    """First non-noise user prompt from the events (truncated to 200 chars).
+    """First real user prompt from the events (truncated to 200 chars).
 
-    Skips command caveats, slash-command markers, and system reminders so
-    the task title reflects what the user actually typed."""
+    Skips:
+      - events flagged `isMeta: true` — Claude Code uses this for its own
+        injections (auto-resume prompts, slash-command body templates,
+        system-reminder echoes).
+      - empty / whitespace-only content.
+      - text that starts with command-caveat / system-reminder tags.
+      - normalised resume placeholders ('continue from where you left off',
+        'continue', 'resume') — defence in depth in case isMeta isn't set.
+    """
     for e in events:
+        if e.get("isMeta") is True:
+            continue
         text = _event_text(e)
         if not text or _is_noise(text):
             continue
