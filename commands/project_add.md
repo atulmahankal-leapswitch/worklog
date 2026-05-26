@@ -65,7 +65,11 @@ If the user picks **No**, skip to step 7. If **Clear**, run:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog project set-clickup \
-  --name "<name>" --workspace-id "" --space-id "" --list-id ""
+  --name "<name>" \
+  --workspace-id "" \
+  --space-id "" --space-name "" \
+  --folder-id "" --folder-name "" \
+  --list-id "" --list-name ""
 ```
 
 …and skip to step 7.
@@ -87,7 +91,9 @@ Build an `AskUserQuestion` from the returned Spaces (≤ 4 per question;
 batch if needed). Each option's `description` should include the Space
 id so the user can sanity-check.
 
-Store the user's chosen Space id as `SPACE_ID`.
+Store the user's chosen Space id as `SPACE_ID` **and its name as
+`SPACE_NAME`** (lift it from the same node in the hierarchy). The name is
+what `/worklog:projects` will display.
 
 #### 6b. (Optional) Drill into a default List
 
@@ -99,7 +105,9 @@ If **No**, set the mapping with just the Space:
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog project set-clickup \
   --name "<name>" --workspace-id "$WORKSPACE_ID" \
-  --space-id "$SPACE_ID" --list-id ""
+  --space-id "$SPACE_ID" --space-name "$SPACE_NAME" \
+  --folder-id "" --folder-name "" \
+  --list-id "" --list-name ""
 ```
 
 If **Yes**, fetch Folders + Lists in that Space:
@@ -111,13 +119,20 @@ mcp__claude_ai_ClickUp__clickup_get_workspace_hierarchy
 ```
 
 Present every reachable List as an `AskUserQuestion` (label
-`<folder name> / <list name>` so the user sees the hierarchy). Save:
+`<folder name> / <list name>` so the user sees the hierarchy). When the
+user picks one, also capture its parent **folder id + name** (if the
+List lives directly under the Space with no Folder, leave folder fields
+empty) and the **list name** itself. Save:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog project set-clickup \
   --name "<name>" --workspace-id "$WORKSPACE_ID" \
-  --space-id "$SPACE_ID" --list-id "<chosen list id>"
+  --space-id "$SPACE_ID" --space-name "$SPACE_NAME" \
+  --folder-id "$FOLDER_ID" --folder-name "$FOLDER_NAME" \
+  --list-id "$LIST_ID" --list-name "$LIST_NAME"
 ```
+
+(Pass empty strings for folder-* when the chosen List has no Folder.)
 
 ### 7. Verify & wrap up
 

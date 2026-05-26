@@ -192,19 +192,20 @@ def cmd_projects(a):
         autolog = _ok("on") if r["auto_log"] else _dim("off")
         ws = r["clickup_workspace_id"]
         cu_parts = []
-        if r["clickup_space_id"]:
-            label = _code(r["clickup_space_id"])
-            if ws:
-                url = f"https://app.clickup.com/{ws}/v/o/s/{r['clickup_space_id']}"
-                label = _link(label, url)
-            cu_parts.append("space:" + label)
-        if r["clickup_list_id"]:
-            label = _code(r["clickup_list_id"])
-            if ws:
-                url = f"https://app.clickup.com/{ws}/v/li/{r['clickup_list_id']}"
-                label = _link(label, url)
-            cu_parts.append("list:" + label)
-        cu = "  ".join(cu_parts) or _dim("—")
+        for seg_id, seg_name, url_template in (
+            (r["clickup_space_id"],  r["clickup_space_name"],  "v/o/s"),
+            (r["clickup_folder_id"], r["clickup_folder_name"], "v/o/f"),
+            (r["clickup_list_id"],   r["clickup_list_name"],   "v/li"),
+        ):
+            if not (seg_id or seg_name):
+                continue
+            label = seg_name or seg_id
+            if ws and seg_id:
+                cu_parts.append(_link(label,
+                                      f"https://app.clickup.com/{ws}/{url_template}/{seg_id}"))
+            else:
+                cu_parts.append(label)
+        cu = " / ".join(cu_parts) or _dim("—")
         last = r["last_active"] or _dim("—")
         table_rows.append([
             str(r["id"]),
@@ -283,26 +284,32 @@ def cmd_project_untrack(a):
 
 
 def cmd_project_set_clickup(a):
-    if a.workspace_id is None and a.space_id is None and a.list_id is None:
-        print("error: pass at least --workspace-id, --space-id or --list-id "
-              "(use '' to clear)", file=sys.stderr)
+    fields = {
+        "workspace_id": a.workspace_id,
+        "space_id":     a.space_id,
+        "space_name":   a.space_name,
+        "folder_id":    a.folder_id,
+        "folder_name":  a.folder_name,
+        "list_id":      a.list_id,
+        "list_name":    a.list_name,
+    }
+    if all(v is None for v in fields.values()):
+        print("error: pass at least one of --workspace-id, --space-id, "
+              "--space-name, --folder-id, --folder-name, --list-id, "
+              "--list-name (use '' to clear)", file=sys.stderr)
         return 2
     if db.get_project(a.name) is None:
         print(f"error: no project named '{a.name}' — register it first with "
               f"`worklog project register --path <dir> --name {a.name}`",
               file=sys.stderr)
         return 1
-    db.set_project_clickup_mapping(
-        a.name,
-        workspace_id=a.workspace_id,
-        space_id=a.space_id,
-        list_id=a.list_id,
-    )
+    db.set_project_clickup_mapping(a.name, **fields)
     row = db.get_project(a.name)
     print(f"project '{row['name']}' ClickUp mapping: "
           f"workspace={row['clickup_workspace_id'] or '—'}  "
-          f"space={row['clickup_space_id'] or '—'}  "
-          f"list={row['clickup_list_id'] or '—'}")
+          f"space={row['clickup_space_name'] or row['clickup_space_id'] or '—'}  "
+          f"folder={row['clickup_folder_name'] or row['clickup_folder_id'] or '—'}  "
+          f"list={row['clickup_list_name'] or row['clickup_list_id'] or '—'}")
 
 
 def _fmt_min(m: int) -> str:
@@ -603,12 +610,16 @@ def build_parser() -> argparse.ArgumentParser:
     proj_unt.set_defaults(func=cmd_project_untrack)
 
     proj_cu = proj_sub.add_parser("set-clickup",
-                                  help="map a project to ClickUp Workspace/Space/List (pass '' to clear a field)")
+                                  help="map a project to ClickUp Workspace/Space/Folder/List (pass '' to clear)")
     proj_cu.add_argument("--name", required=True)
     proj_cu.add_argument("--workspace-id", dest="workspace_id", default=None,
                          help="ClickUp workspace id — needed to build clickable URLs in /worklog:projects")
-    proj_cu.add_argument("--space-id", dest="space_id", default=None)
-    proj_cu.add_argument("--list-id", dest="list_id", default=None)
+    proj_cu.add_argument("--space-id",    dest="space_id",    default=None)
+    proj_cu.add_argument("--space-name",  dest="space_name",  default=None)
+    proj_cu.add_argument("--folder-id",   dest="folder_id",   default=None)
+    proj_cu.add_argument("--folder-name", dest="folder_name", default=None)
+    proj_cu.add_argument("--list-id",     dest="list_id",     default=None)
+    proj_cu.add_argument("--list-name",   dest="list_name",   default=None)
     proj_cu.set_defaults(func=cmd_project_set_clickup)
 
     s = sub.add_parser("show")

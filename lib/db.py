@@ -109,6 +109,14 @@ def _migrate(c: sqlite3.Connection):
         c.execute("ALTER TABLE projects ADD COLUMN clickup_space_id TEXT")
     if "clickup_workspace_id" not in cols:
         c.execute("ALTER TABLE projects ADD COLUMN clickup_workspace_id TEXT")
+    if "clickup_space_name" not in cols:
+        c.execute("ALTER TABLE projects ADD COLUMN clickup_space_name TEXT")
+    if "clickup_folder_id" not in cols:
+        c.execute("ALTER TABLE projects ADD COLUMN clickup_folder_id TEXT")
+    if "clickup_folder_name" not in cols:
+        c.execute("ALTER TABLE projects ADD COLUMN clickup_folder_name TEXT")
+    if "clickup_list_name" not in cols:
+        c.execute("ALTER TABLE projects ADD COLUMN clickup_list_name TEXT")
 
 
 def init():
@@ -220,28 +228,36 @@ def set_project_clickup_list(project: str, list_id: str):
         c.execute("UPDATE projects SET clickup_list_id=? WHERE id=?", (list_id, pid))
 
 
-def set_project_clickup_mapping(
-    project: str,
-    *,
-    workspace_id: Optional[str] = None,
-    space_id: Optional[str] = None,
-    list_id: Optional[str] = None,
-):
-    """Set Workspace / Space / List ids for a project. Only non-None args are
-    written; pass an empty string to explicitly clear a field."""
-    if workspace_id is None and space_id is None and list_id is None:
+_CLICKUP_COLUMN = {
+    "workspace_id":  "clickup_workspace_id",
+    "space_id":      "clickup_space_id",
+    "space_name":    "clickup_space_name",
+    "folder_id":     "clickup_folder_id",
+    "folder_name":   "clickup_folder_name",
+    "list_id":       "clickup_list_id",
+    "list_name":     "clickup_list_name",
+}
+
+
+def set_project_clickup_mapping(project: str, **fields):
+    """Set any of: workspace_id, space_id, space_name, folder_id,
+    folder_name, list_id, list_name. Only fields that are not None get
+    written; pass an empty string to clear one explicitly."""
+    payload = {k: v for k, v in fields.items() if v is not None}
+    if not payload:
         return
+    unknown = set(payload) - set(_CLICKUP_COLUMN)
+    if unknown:
+        raise ValueError(f"unknown clickup mapping fields: {sorted(unknown)}")
+    cols = [_CLICKUP_COLUMN[k] for k in payload]
+    vals = [(v or None) for v in payload.values()]
     with connect() as c:
         pid = get_or_create_project(project, conn=c)
-        if workspace_id is not None:
-            c.execute("UPDATE projects SET clickup_workspace_id=? WHERE id=?",
-                      (workspace_id or None, pid))
-        if space_id is not None:
-            c.execute("UPDATE projects SET clickup_space_id=? WHERE id=?",
-                      (space_id or None, pid))
-        if list_id is not None:
-            c.execute("UPDATE projects SET clickup_list_id=? WHERE id=?",
-                      (list_id or None, pid))
+        c.execute(
+            f"UPDATE projects SET {', '.join(f'{col}=?' for col in cols)} "
+            f"WHERE id=?",
+            (*vals, pid),
+        )
 
 
 def get_project(name: str) -> Optional[sqlite3.Row]:
@@ -313,8 +329,12 @@ def list_projects_with_status() -> list[sqlite3.Row]:
     with connect() as c:
         return c.execute(
             """SELECT p.id, p.name, p.path, p.coordinator, p.git_repo,
-                      p.auto_log, p.clickup_workspace_id, p.clickup_space_id,
-                      p.clickup_list_id, p.created_at,
+                      p.auto_log,
+                      p.clickup_workspace_id,
+                      p.clickup_space_id, p.clickup_space_name,
+                      p.clickup_folder_id, p.clickup_folder_name,
+                      p.clickup_list_id, p.clickup_list_name,
+                      p.created_at,
                       (
                         SELECT MAX(d) FROM (
                           SELECT MAX(date) AS d FROM tasks      WHERE project_id = p.id
