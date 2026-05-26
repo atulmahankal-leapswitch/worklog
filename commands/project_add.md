@@ -157,11 +157,15 @@ List picker, exactly as in the previous version of this command:
 ### 7. Verify & wrap up
 
 ```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog projects
+python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog project show --name "$CHOSEN_NAME"
 ```
 
-Render the row for this project so the user sees the final state.
-Remind them:
+This prints a focused summary — name + path + auto-log status + ClickUp
+breadcrumb, with each segment of the ClickUp breadcrumb rendered as a
+clickable link (same format `/worklog:projects` uses). Render the
+output as-is.
+
+Then remind the user:
 
 - `/worklog:project_remove` to disable auto-logging.
 - `/worklog:project_add <new target>` to switch the ClickUp mapping

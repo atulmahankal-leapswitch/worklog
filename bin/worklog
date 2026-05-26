@@ -190,22 +190,7 @@ def cmd_projects(a):
             exists = "—"
             path_cell = "—"
         autolog = _ok("on") if r["auto_log"] else _dim("off")
-        ws = r["clickup_workspace_id"]
-        cu_parts = []
-        for seg_id, seg_name, url_template in (
-            (r["clickup_space_id"],  r["clickup_space_name"],  "v/o/s"),
-            (r["clickup_folder_id"], r["clickup_folder_name"], "v/o/f"),
-            (r["clickup_list_id"],   r["clickup_list_name"],   "v/li"),
-        ):
-            if not (seg_id or seg_name):
-                continue
-            label = seg_name or seg_id
-            if ws and seg_id:
-                cu_parts.append(_link(label,
-                                      f"https://app.clickup.com/{ws}/{url_template}/{seg_id}"))
-            else:
-                cu_parts.append(label)
-        cu = " / ".join(cu_parts) or _dim("—")
+        cu = _clickup_breadcrumb(r) or _dim("—")
         last = r["last_active"] or _dim("—")
         table_rows.append([
             str(r["id"]),
@@ -281,6 +266,56 @@ def cmd_project_untrack(a):
         print(f"no project registered covering {path}")
         return 1
     print(f"project '{row['name']}' ({row['path']}) — auto-log now OFF")
+
+
+def _clickup_breadcrumb(row):
+    """Returns a ' / '-joined ClickUp breadcrumb with each segment linked
+    (markdown link in piped mode, OSC 8 in TTY). Empty string if no mapping."""
+    ws = row["clickup_workspace_id"]
+    parts = []
+    for seg_id, seg_name, url_template in (
+        (row["clickup_space_id"],  row["clickup_space_name"],  "v/o/s"),
+        (row["clickup_folder_id"], row["clickup_folder_name"], "v/o/f"),
+        (row["clickup_list_id"],   row["clickup_list_name"],   "v/li"),
+    ):
+        if not (seg_id or seg_name):
+            continue
+        label = seg_name or seg_id
+        if ws and seg_id:
+            parts.append(_link(label,
+                               f"https://app.clickup.com/{ws}/{url_template}/{seg_id}"))
+        else:
+            parts.append(label)
+    return " / ".join(parts)
+
+
+def cmd_project_show(a):
+    from pathlib import Path as _Path
+    row = None
+    if a.id is not None:
+        with db.connect() as c:
+            row = c.execute("SELECT * FROM projects WHERE id=?", (a.id,)).fetchone()
+    elif a.name:
+        row = db.get_project(a.name)
+    elif a.path:
+        row = db.get_project_by_path(a.path)
+    else:
+        print("error: pass --id, --name or --path", file=sys.stderr)
+        return 2
+    if not row:
+        print("error: project not found", file=sys.stderr)
+        return 1
+
+    path_cell = (_link(_code(row["path"]), _file_url(row["path"]))
+                 if row["path"] else "—")
+    exists = (_ok("yes") if row["path"] and _Path(row["path"]).exists()
+              else (_bold("no") if row["path"] else "—"))
+    autolog = _ok("on") if row["auto_log"] else _dim("off")
+    cu = _clickup_breadcrumb(row) or _dim("not mapped")
+    print(f"{_bold(row['name'])} (#{row['id']})")
+    print(f"  path     : {path_cell}  ({exists})")
+    print(f"  auto-log : {autolog}")
+    print(f"  ClickUp  : {cu}")
 
 
 def cmd_project_remove(a):
@@ -638,6 +673,13 @@ def build_parser() -> argparse.ArgumentParser:
     proj_rm.add_argument("--id", type=int, default=None)
     proj_rm.add_argument("--name", default=None)
     proj_rm.set_defaults(func=cmd_project_remove)
+
+    proj_sh = proj_sub.add_parser("show",
+                                  help="print a single project's name + path + auto-log + ClickUp breadcrumb")
+    proj_sh.add_argument("--id", type=int, default=None)
+    proj_sh.add_argument("--name", default=None)
+    proj_sh.add_argument("--path", default=None)
+    proj_sh.set_defaults(func=cmd_project_show)
 
     proj_cu = proj_sub.add_parser("set-clickup",
                                   help="map a project to ClickUp Workspace/Space/Folder/List (pass '' to clear)")
