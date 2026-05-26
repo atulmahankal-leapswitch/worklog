@@ -4,29 +4,34 @@ Smoke + integration tests for the `worklog` plugin.
 
 ## Run
 
-From the repo root:
+From the repo root, using [`uv`](https://docs.astral.sh/uv/) (recommended
+— creates an isolated venv automatically):
 
 ```bash
-python3 -m pytest tests/ -q
+uv run --group dev pytest
 ```
 
-If `pytest` isn't installed:
+If you don't have `uv` yet:
 
 ```bash
-pip install --user --break-system-packages pytest
+curl -LsSf https://astral.sh/uv/install.sh | sh
 ```
 
-(Or use a venv.)
+`pytest` is declared as a [PEP 735](https://peps.python.org/pep-0735/)
+dev-dependency group in the root `pyproject.toml`; the runtime itself
+has zero external dependencies.
 
 ## What's covered
 
 - `test_db.py` — schema/DAO round-trips (`tasks`, `timesheet`, `projects`),
   `find_project_by_path` (incl. longest-prefix), `auto_log` toggling,
-  dedupe rules, and deletes.
+  dedupe rules, deletes, and project upsert-by-path / delete-status logic.
 - `test_hook.py` — invokes `hooks/log_session.py` as a real subprocess
   (the way Claude Code does), feeding fabricated transcripts and payloads.
   Covers: unregistered cwd skip, registered cwd logs, `auto_log=0` skip,
   and the 2-minute minimum.
+- `test_transcripts.py` — chunk-by-idle-gap, longest-prefix path encoding,
+  noise / resume-prompt filtering.
 
 ## Isolation
 

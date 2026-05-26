@@ -240,6 +240,40 @@ See [`docs/`](docs/README.md) for:
 
 ---
 
+## Development
+
+Runtime is **stdlib-only** — no `pip install` is needed to *use* the
+plugin. The only external dependency anywhere in the project is
+`pytest`, and it's declared as a [PEP 735](https://peps.python.org/pep-0735/)
+dev-only group in `pyproject.toml`.
+
+Run the test suite with [`uv`](https://docs.astral.sh/uv/) (creates an
+isolated venv, doesn't touch your system Python):
+
+```bash
+# one-time, if you don't have uv installed:
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# run the tests
+uv run --group dev pytest
+```
+
+Plain `pytest` also works if you already have it on your PATH.
+
+Tests use a temp directory for `WORKLOG_HOME`, so your real
+`~/.worklog/` database is untouched.
+
+The `uv.lock` is committed so test runs are reproducible. Re-resolve
+after editing `pyproject.toml`:
+
+```bash
+uv lock
+```
+
+See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for internal design.
+
+---
+
 ## License
 
 MIT — see [LICENSE](LICENSE).

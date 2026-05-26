@@ -1,0 +1,29 @@
+[project]
+name = "worklog-plugin"
+version = "0.1.0"
+description = "Personal worklog Claude Code plugin — track tasks/time/meetings in SQLite, push to ClickUp."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [
+    { name = "Atul Mahankal", email = "atul.mahankal@leapswitch.com" },
+]
+# Runtime is intentionally stdlib-only — `sqlite3`, `argparse`, `pathlib`,
+# `json`, `urllib.parse`. No `pip install` is ever needed to USE the plugin.
+dependencies = []
+
+[project.urls]
+Homepage = "https://github.com/atulmahankal-leapswitch/worklog"
+Repository = "https://github.com/atulmahankal-leapswitch/worklog"
+
+# PEP 735 dependency groups. Use `uv run --group dev pytest tests/` or
+# `uv run pytest` (uv resolves the dev group automatically with `--all-groups`
+# or via the cli's default group discovery).
+[dependency-groups]
+dev = [
+    "pytest>=7",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-q"

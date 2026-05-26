@@ -72,7 +72,7 @@ b636ccf  Cleanup pass: LICENSE, tests, DRY parser, finished docs
    marketplace.json / hook config.
 2. Run tests before committing:
    ```bash
-   python3 -m pytest tests/ -q
+   uv run --group dev pytest
    ```
 3. Smoke-test the CLI from this dir:
    ```bash
@@ -83,6 +83,32 @@ b636ccf  Cleanup pass: LICENSE, tests, DRY parser, finished docs
    "Generated with Claude Code" footers.
 5. The default workflow has been: regular `git push origin main`. Amend +
    `--force-with-lease` is allowed only when the user explicitly asks.
+
+## Python tooling — use `uv`, NOT `pip`
+
+This project ships a `pyproject.toml` and a committed `uv.lock`. Always
+use **`uv`** commands; **never** invoke `pip` directly (and especially
+not `pip install --break-system-packages` — that's the old hack the
+project moved away from).
+
+| Want to…                                | Command                                           |
+|-----------------------------------------|---------------------------------------------------|
+| Sync the dev env (after a fresh clone)  | `uv sync --group dev`                             |
+| Run the test suite                      | `uv run --group dev pytest`                       |
+| Run any ad-hoc python script in the env | `uv run python <script.py>`                       |
+| Add a new dev dependency                | `uv add --group dev <package>`                    |
+| Add a runtime dependency (rare!)        | `uv add <package>` — first stop and reconsider; runtime is stdlib-only by design |
+| Refresh the lockfile                    | `uv lock` (or `uv lock --upgrade`)                |
+
+**Do NOT use**:
+- `uv pip install …` — this is the imperative escape hatch; prefer the
+  declarative `uv add` / `uv sync` flow.
+- `pip install …` or `pip install --user --break-system-packages …`
+- Manual `venv` creation — `uv` manages `.venv/` automatically.
+
+The runtime entry points (`bin/worklog`, `hooks/log_session.py`) run
+under plain `python3`, not `uv run`. Don't change that — users
+shouldn't need `uv` to *use* the plugin, only to develop it.
 
 ---
 
