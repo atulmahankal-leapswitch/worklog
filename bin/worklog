@@ -26,6 +26,30 @@ sys.path.insert(0, str(ROOT))
 from lib import db  # noqa: E402
 
 
+# --- Rendering: ANSI for TTY, markdown for everything else ----------------
+# Auto-detected so Claude Code (which captures stdout) keeps getting the
+# markdown it can render, while a plain terminal sees colourised output.
+_TTY = sys.stdout.isatty()
+
+if _TTY:
+    _RESET = "\x1b[0m"
+    def _bold(s):    return f"\x1b[1m{s}{_RESET}"
+    def _italic(s):  return f"\x1b[3m{s}{_RESET}"
+    def _dim(s):     return f"\x1b[2m{s}{_RESET}"
+    def _heading(s): return f"\x1b[1;36m{s}{_RESET}"   # bold cyan
+    def _subhead(s): return f"\x1b[1;34m{s}{_RESET}"   # bold blue
+    def _code(s):    return f"\x1b[33m{s}{_RESET}"     # yellow
+    def _ok(s):      return f"\x1b[32m{s}{_RESET}"     # green
+else:
+    def _bold(s):    return f"**{s}**"
+    def _italic(s):  return f"_{s}_"
+    def _dim(s):     return f"_{s}_"
+    def _heading(s): return f"# {s}"
+    def _subhead(s): return f"## {s}"
+    def _code(s):    return f"`{s}`"
+    def _ok(s):      return f"**{s}**"
+
+
 def parse_date(s: str | None) -> str:
     if not s or s == "today":
         return _date.today().isoformat()
@@ -294,26 +318,31 @@ def cmd_show(a):
         print(json.dumps(out, indent=2))
         return
 
-    print(f"# Worklog for {d}\n")
+    print(_heading(f"Worklog for {d}") + "\n")
     if tasks:
-        print("## Tasks")
+        print(_subhead("Tasks"))
         for r in out["tasks"]:
             mark = "x" if r["status"] == "done" else " "
             cu = f" [cu:{r['clickup_task_id']}]" if r["clickup_task_id"] else ""
-            print(f"- `#{r['id']}`  [{mark}] {r['project']}: {r['task']} ({r['status']}){cu}")
+            print(f"- {_code('#' + str(r['id']))}  [{mark}] "
+                  f"{r['project']}: {r['task']} ({r['status']}){cu}")
         print()
     else:
-        print("_no tasks_\n")
+        print(_italic("no tasks") + "\n")
     if ts:
-        print("## Timesheet")
+        print(_subhead("Timesheet"))
         for r in out["timesheet"]:
-            print(f"- `#{r['id']}`  {r['since']}–{r['upto']} ({r['duration']}) {r['project']}: {r['task']}  _{r['source']}_")
-        print(f"\n**Total: {out['totals']['duration_logged']}**")
+            print(f"- {_code('#' + str(r['id']))}  "
+                  f"{r['since']}–{r['upto']} ({r['duration']}) "
+                  f"{r['project']}: {r['task']}  {_dim(r['source'])}")
+        print(f"\n{_ok('Total: ' + out['totals']['duration_logged'])}")
     else:
-        print("_no time entries_")
+        print(_italic("no time entries"))
     if tasks or ts:
-        print("\n_Use `/worklog:remove <id>` to drop a timesheet row, "
-              "or `/worklog:remove task <id>` for a task._")
+        print("\n" + _italic(
+            "Use `/worklog:remove <id>` to drop a timesheet row, "
+            "or `/worklog:remove task <id>` for a task."
+        ))
 
 
 def cmd_list_pending(a):
