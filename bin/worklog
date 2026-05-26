@@ -113,16 +113,40 @@ def cmd_projects(a):
         print(f"| {r['id']} | {r['name']} | `{path}` | {exists} | {autolog} | {last} |")
 
 
-def cmd_remove_time(a):
-    ok = db.delete_timesheet(a.id)
-    print(f"timesheet #{a.id} removed" if ok else f"timesheet #{a.id} not found")
+def _remove_time(ts_id: int) -> int:
+    ok = db.delete_timesheet(ts_id)
+    print(f"timesheet #{ts_id} removed" if ok else f"timesheet #{ts_id} not found")
     return 0 if ok else 1
 
 
-def cmd_remove_task(a):
-    ok = db.delete_task(a.id)
-    print(f"task #{a.id} removed" if ok else f"task #{a.id} not found")
+def _remove_task(task_id: int) -> int:
+    ok = db.delete_task(task_id)
+    print(f"task #{task_id} removed" if ok else f"task #{task_id} not found")
     return 0 if ok else 1
+
+
+def cmd_remove(a):
+    """Accepts:
+        worklog remove <id>          → delete timesheet row
+        worklog remove time <id>     → same, explicit
+        worklog remove task <id>     → delete tasks row
+    """
+    first = a.kind_or_id
+    # Bare-id shorthand: `worklog remove 4`
+    if first.isdigit():
+        if a.id is not None:
+            print("error: id given twice", file=sys.stderr)
+            return 2
+        return _remove_time(int(first))
+    if first not in ("time", "task"):
+        print(f"error: unknown kind '{first}' (use 'time', 'task', or a numeric id)",
+              file=sys.stderr)
+        return 2
+    if a.id is None:
+        print(f"error: missing id (usage: worklog remove {first} <id>)",
+              file=sys.stderr)
+        return 2
+    return _remove_time(a.id) if first == "time" else _remove_task(a.id)
 
 
 def cmd_project_register(a):
@@ -417,14 +441,15 @@ def build_parser() -> argparse.ArgumentParser:
     pr.add_argument("--format", choices=["text", "json"], default="text")
     pr.set_defaults(func=cmd_projects)
 
-    rm = sub.add_parser("remove", help="remove a task or timesheet entry by id")
-    rm_sub = rm.add_subparsers(dest="kind", required=True)
-    rm_time = rm_sub.add_parser("time", help="remove a timesheet entry")
-    rm_time.add_argument("id", type=int)
-    rm_time.set_defaults(func=cmd_remove_time)
-    rm_task = rm_sub.add_parser("task", help="remove a task entry")
-    rm_task.add_argument("id", type=int)
-    rm_task.set_defaults(func=cmd_remove_task)
+    rm = sub.add_parser(
+        "remove",
+        help="remove a timesheet (default) or task entry by id. "
+             "Usage: worklog remove <id> | worklog remove time <id> | worklog remove task <id>",
+    )
+    rm.add_argument("kind_or_id", help="'time' | 'task' | <id>  (bare id = timesheet)")
+    rm.add_argument("id", nargs="?", type=int,
+                    help="entry id (required when kind_or_id is 'time' or 'task')")
+    rm.set_defaults(func=cmd_remove)
 
     proj = sub.add_parser("project", help="register / untrack a project by path")
     proj_sub = proj.add_subparsers(dest="action", required=True)
