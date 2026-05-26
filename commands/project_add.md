@@ -14,19 +14,33 @@ mapping without re-registering.
 
 ## Steps
 
-### 1. Resolve cwd and proposed name
+### 1. Resolve cwd and look up any existing project
 
 ```bash
 PWD_NOW="$(pwd)"
 DEFAULT_NAME="$(basename "$PWD_NOW")"
 ```
 
+Fetch all projects as JSON and search for one whose `path` equals
+`$PWD_NOW` (paths are stored absolute):
+
+```bash
+python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog projects --format json
+```
+
+If a row matches, this is a **reconfigure**: capture its current
+`name`, `clickup_workspace_id`, `clickup_space_name`,
+`clickup_folder_name`, `clickup_list_name`, and `auto_log` so you can
+surface them in the next steps. Otherwise treat as a fresh registration.
+
 ### 2. Pick the project name
 
-- If `$ARGUMENTS` is non-empty → use it as the name.
-- Else, ask the user: "Register this folder as project
+- If `$ARGUMENTS` is non-empty → use it as the new name.
+- Else if a row already exists for this path → ask:
+  "Keep current name **`<existing_name>`**?  (Enter to keep, or type a
+  new name.)"  Blank = keep existing.
+- Else → ask: "Register this folder as project
   **`<DEFAULT_NAME>`**? (Enter to accept, or type a different name.)"
-  If blank/confirm, use `$DEFAULT_NAME`.
 
 ### 3. Register (or update) the project
 
@@ -35,19 +49,21 @@ python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog project register \
   --path "$PWD_NOW" --name "<chosen name>"
 ```
 
-This turns auto-log on and creates the row if missing. Echo the CLI's
-confirmation.
+`project register` uses **path as the unique key**, so re-running on an
+already-registered folder just updates the existing row (renaming it if
+you typed a new name). It never creates a duplicate.
+
+Echo the CLI's confirmation.
 
 ### 4. Show current ClickUp mapping (if any)
 
-```bash
-python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog projects --format json
+You already captured this in step 1. Display it back to the user, e.g.:
+
+```
+Current ClickUp mapping: Core Team / Application Developement / CloudPe Admin
 ```
 
-Find the row for `<chosen name>` in the JSON. Read `clickup_space_id`
-and `clickup_list_id`. If both are blank, treat as "not mapped yet";
-otherwise display the current values so the user can decide whether to
-change them.
+…or "Not mapped yet." if all clickup fields are empty.
 
 ### 5. Ask whether to (re)map ClickUp
 

@@ -283,6 +283,30 @@ def cmd_project_untrack(a):
     print(f"project '{row['name']}' ({row['path']}) — auto-log now OFF")
 
 
+def cmd_project_remove(a):
+    if a.id is None and not a.name:
+        print("error: pass --id <N> or --name <project>", file=sys.stderr)
+        return 2
+    target_id = a.id
+    if target_id is None:
+        row = db.get_project(a.name)
+        if not row:
+            print(f"error: no project named '{a.name}'", file=sys.stderr)
+            return 1
+        target_id = row["id"]
+    status = db.delete_project(target_id)
+    if status == "not_found":
+        print(f"error: project #{target_id} not found", file=sys.stderr)
+        return 1
+    if status == "in_use":
+        print(f"error: project #{target_id} still has tasks or timesheet "
+              f"rows referencing it. Remove those first (or use "
+              f"`worklog project untrack` to just turn off auto-logging).",
+              file=sys.stderr)
+        return 1
+    print(f"project #{target_id} removed")
+
+
 def cmd_project_set_clickup(a):
     fields = {
         "workspace_id": a.workspace_id,
@@ -608,6 +632,12 @@ def build_parser() -> argparse.ArgumentParser:
                                    help="turn auto-logging off for the project covering this path")
     proj_unt.add_argument("--path", required=True)
     proj_unt.set_defaults(func=cmd_project_untrack)
+
+    proj_rm = proj_sub.add_parser("remove",
+                                  help="delete a project row (fails if tasks or timesheet rows reference it)")
+    proj_rm.add_argument("--id", type=int, default=None)
+    proj_rm.add_argument("--name", default=None)
+    proj_rm.set_defaults(func=cmd_project_remove)
 
     proj_cu = proj_sub.add_parser("set-clickup",
                                   help="map a project to ClickUp Workspace/Space/Folder/List (pass '' to clear)")

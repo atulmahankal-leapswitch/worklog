@@ -165,3 +165,44 @@ def test_slack_update_queue_skips_non_slack_source():
     db.add_task(project="P", task="manual done", source="manual",
                 status="done")
     assert db.list_tasks_needing_slack_update() == []
+
+
+# --- Project upsert / delete ---
+
+def test_add_project_upsert_by_path_renames_in_place(tmp_path):
+    root = tmp_path / "repo"
+    root.mkdir()
+    pid1 = db.add_project(name="OldName", path=str(root))
+    pid2 = db.add_project(name="NewName", path=str(root))
+    assert pid1 == pid2  # same row reused
+    assert db.get_project("OldName") is None
+    assert db.get_project("NewName") is not None
+    # Only one row at this path
+    proj = db.get_project_by_path(str(root))
+    assert proj["name"] == "NewName"
+
+
+def test_add_project_path_and_name_conflict_raises(tmp_path):
+    a = tmp_path / "a"; a.mkdir()
+    b = tmp_path / "b"; b.mkdir()
+    db.add_project(name="alpha", path=str(a))
+    db.add_project(name="beta",  path=str(b))
+    # alpha at /a + beta at /b — now try to register /a as 'beta'
+    with pytest.raises(ValueError, match="conflict"):
+        db.add_project(name="beta", path=str(a))
+
+
+def test_delete_project_status(tmp_path):
+    a = tmp_path / "a"; a.mkdir()
+    pid = db.add_project(name="todelete", path=str(a))
+    # Has refs → in_use
+    db.add_timesheet(date="2026-01-01", since="10:00", upto="11:00",
+                     minutes=60, project="todelete", task="t")
+    assert db.delete_project(pid) == "in_use"
+    # Clear refs and delete
+    for ts in db.list_timesheet("2026-01-01"):
+        db.delete_timesheet(ts["id"])
+    assert db.delete_project(pid) == "deleted"
+    # Already deleted → not_found
+    assert db.delete_project(pid) == "not_found"
+    assert db.delete_project(99999) == "not_found"

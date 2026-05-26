@@ -279,27 +279,79 @@ def add_project(
     git_repo: str = "",
     auto_log: bool = True,
 ) -> int:
-    """Register or update a project. Returns project id."""
+    """Register or update a project. Path is treated as the unique key — if a
+    project already exists at this absolute path, it's updated in place
+    (renamed if `name` differs) rather than a duplicate row being created.
+
+    If the path is new but the name is already taken by another project,
+    falls back to updating by name (lets the user move a project to a new
+    path). Conflicts (path and name resolve to *different* rows) raise."""
     abs_path = _abs(path)
     with connect() as c:
-        row = c.execute("SELECT id FROM projects WHERE name=?", (name,)).fetchone()
-        if row:
+        path_match = None
+        if abs_path:
+            path_match = c.execute(
+                "SELECT id, name FROM projects WHERE path = ?", (abs_path,)
+            ).fetchone()
+        name_match = c.execute(
+            "SELECT id, name, path FROM projects WHERE name = ?", (name,)
+        ).fetchone()
+
+        if path_match and name_match and path_match["id"] != name_match["id"]:
+            raise ValueError(
+                f"conflict: path '{abs_path}' is already registered under "
+                f"project '{path_match['name']}' (#{path_match['id']}), and "
+                f"name '{name}' is already used by another project "
+                f"(#{name_match['id']} at '{name_match['path']}'). Remove "
+                f"one of them first with `worklog project remove --id <id>`."
+            )
+
+        existing = path_match or name_match
+        if existing:
             c.execute(
                 """UPDATE projects
-                   SET path        = COALESCE(?, path),
+                   SET name        = ?,
+                       path        = COALESCE(?, path),
                        coordinator = COALESCE(NULLIF(?, ''), coordinator),
                        git_repo    = COALESCE(NULLIF(?, ''), git_repo),
                        auto_log    = ?
                    WHERE id = ?""",
-                (abs_path, coordinator, git_repo, 1 if auto_log else 0, row["id"]),
+                (name, abs_path, coordinator, git_repo,
+                 1 if auto_log else 0, existing["id"]),
             )
-            return row["id"]
+            return existing["id"]
         cur = c.execute(
             """INSERT INTO projects(name, path, coordinator, git_repo, auto_log)
                VALUES (?, ?, ?, ?, ?)""",
             (name, abs_path, coordinator, git_repo, 1 if auto_log else 0),
         )
         return cur.lastrowid
+
+
+def get_project_by_path(abs_path: str):
+    """Exact path match. None if not registered."""
+    with connect() as c:
+        return c.execute(
+            "SELECT * FROM projects WHERE path = ?", (_abs(abs_path),)
+        ).fetchone()
+
+
+def delete_project(project_id: int) -> str:
+    """Returns one of: 'deleted', 'not_found', 'in_use'."""
+    with connect() as c:
+        if not c.execute(
+            "SELECT 1 FROM projects WHERE id = ?", (project_id,)
+        ).fetchone():
+            return "not_found"
+        refs = c.execute(
+            "SELECT (SELECT COUNT(*) FROM tasks WHERE project_id = ?) "
+            "       + (SELECT COUNT(*) FROM timesheet WHERE project_id = ?)",
+            (project_id, project_id),
+        ).fetchone()[0]
+        if refs:
+            return "in_use"
+        c.execute("DELETE FROM projects WHERE id = ?", (project_id,))
+        return "deleted"
 
 
 def find_project_by_path(cwd: str) -> Optional[sqlite3.Row]:
