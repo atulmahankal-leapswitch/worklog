@@ -18,6 +18,7 @@ push it.
 | `/worklog:project_add [name]`                            | Register the current directory as a project for auto-logging           |
 | `/worklog:project_remove`                                | Turn off auto-logging for the current directory (keeps history)        |
 | `/worklog:projects`                                      | List registered projects — path, exists, auto-log, last active         |
+| `/worklog:backfill [date]`                               | Scan transcripts and insert missing rows for that date (use after a session that never cleanly exited) |
 | `/worklog:push [date]`                                   | Push that day's tasks to ClickUp (create new / update existing)        |
 | `/worklog:sync-calendar [date]`                          | Pull Google Calendar events into the timesheet (Read AI aware, asks before append) |
 | `/worklog:doctor`                                        | Check that required integrations are healthy                           |

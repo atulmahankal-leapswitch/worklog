@@ -153,6 +153,80 @@ def _fmt_min(m: int) -> str:
     return f"{m // 60:02d}:{m % 60:02d}"
 
 
+def cmd_backfill(a):
+    from lib import transcripts  # local import; only needed here
+    target = parse_date(a.date)
+    projects = [
+        r for r in db.list_projects_with_status()
+        if r["path"] and r["auto_log"]
+    ]
+    if not projects:
+        print("No projects with auto_log enabled — register one with "
+              "`worklog project register --path <dir>` first.")
+        return 1
+
+    added, deduped, short = 0, 0, 0
+    rows = []
+    for p in projects:
+        tdir = transcripts.transcript_dir(p["path"])
+        if not tdir.is_dir():
+            continue
+        for jsonl in sorted(tdir.glob("*.jsonl")):
+            for chunk in transcripts.chunk_sessions(jsonl):
+                if chunk.start.astimezone().date().isoformat() != target:
+                    continue
+                if chunk.minutes < 2:
+                    short += 1
+                    continue
+                start = chunk.start.astimezone()
+                end = chunk.end.astimezone()
+                task = chunk.first_prompt
+                before = db.list_timesheet(target)
+                tid = db.add_timesheet(
+                    date=target,
+                    since=start.strftime("%H:%M"),
+                    upto=end.strftime("%H:%M"),
+                    minutes=chunk.minutes,
+                    project=p["name"],
+                    task=task,
+                    ref=f"claude-cli:backfill:{jsonl.name}",
+                    source="claude-cli",
+                )
+                after = db.list_timesheet(target)
+                was_new = len(after) > len(before)
+                if was_new:
+                    added += 1
+                else:
+                    deduped += 1
+                rows.append({
+                    "project": p["name"],
+                    "since": start.strftime("%H:%M"),
+                    "upto": end.strftime("%H:%M"),
+                    "minutes": chunk.minutes,
+                    "task": task[:60],
+                    "action": "added" if was_new else "skipped (duplicate)",
+                    "id": tid if was_new else None,
+                })
+
+    if a.format == "json":
+        print(json.dumps({"date": target, "added": added, "deduped": deduped,
+                          "short": short, "rows": rows}, indent=2))
+        return 0
+
+    print(f"# Backfill for {target}\n")
+    if not rows:
+        print("_no Claude Code sessions found in registered projects for that date_")
+        return 0
+    print("| #  | Project | Since | Upto | Dur  | Task                                                         | Action            |")
+    print("|----|---------|-------|------|------|--------------------------------------------------------------|-------------------|")
+    for r in rows:
+        h, m = r["minutes"] // 60, r["minutes"] % 60
+        rid = f"#{r['id']}" if r["id"] else "—"
+        print(f"| {rid} | {r['project']} | {r['since']} | {r['upto']} | {h:02d}:{m:02d} | {r['task']:<60} | {r['action']:<17} |")
+    print(f"\n**{added} added, {deduped} duplicates skipped, {short} too short (<2m)**")
+    return 0
+
+
 def cmd_show(a):
     d = parse_date(a.date)
     tasks = db.list_tasks(d)
@@ -370,6 +444,12 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("date", nargs="?", default="today")
     s.add_argument("--format", choices=["text", "json"], default="text")
     s.set_defaults(func=cmd_show)
+
+    bf = sub.add_parser("backfill",
+                        help="scan transcripts of registered projects and insert any missing timesheet rows for date")
+    bf.add_argument("date", nargs="?", default="today")
+    bf.add_argument("--format", choices=["text", "json"], default="text")
+    bf.set_defaults(func=cmd_backfill)
 
     lp = sub.add_parser("list-pending")
     lp.add_argument("date", nargs="?", default="today")
