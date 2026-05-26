@@ -40,6 +40,9 @@ if _TTY:
     def _subhead(s): return f"\x1b[1;34m{s}{_RESET}"   # bold blue
     def _code(s):    return f"\x1b[33m{s}{_RESET}"     # yellow
     def _ok(s):      return f"\x1b[32m{s}{_RESET}"     # green
+    def _link(label, url):
+        # OSC 8 hyperlink (modern terminals: kitty, iTerm2, recent gnome-terminal, Windows Terminal)
+        return f"\x1b]8;;{url}\x1b\\{label}\x1b]8;;\x1b\\"
 else:
     def _bold(s):    return f"**{s}**"
     def _italic(s):  return f"_{s}_"
@@ -48,6 +51,14 @@ else:
     def _subhead(s): return f"## {s}"
     def _code(s):    return f"`{s}`"
     def _ok(s):      return f"**{s}**"
+    def _link(label, url):
+        return f"[{label}]({url})"
+
+
+def _file_url(path: str) -> str:
+    """Convert an absolute filesystem path to a file:// URL."""
+    from urllib.parse import quote
+    return "file://" + quote(path, safe="/")
 
 
 def parse_date(s: str | None) -> str:
@@ -128,10 +139,12 @@ def cmd_projects(a):
     print("| #  | Project | Path | Path exists | Auto-log | ClickUp | Last active |")
     print("|----|---------|------|-------------|----------|---------|-------------|")
     for r in rows:
-        path = r["path"] or "—"
-        exists = "—"
         if r["path"]:
             exists = "yes" if _Path(r["path"]).exists() else "**no**"
+            path_cell = _link(f"`{r['path']}`", _file_url(r["path"]))
+        else:
+            exists = "—"
+            path_cell = "—"
         autolog = "on" if r["auto_log"] else "off"
         cu_parts = []
         if r["clickup_space_id"]:
@@ -140,7 +153,7 @@ def cmd_projects(a):
             cu_parts.append(f"list:`{r['clickup_list_id']}`")
         cu = " ".join(cu_parts) or "—"
         last = r["last_active"] or "—"
-        print(f"| {r['id']} | {r['name']} | `{path}` | {exists} | {autolog} | {cu} | {last} |")
+        print(f"| {r['id']} | {r['name']} | {path_cell} | {exists} | {autolog} | {cu} | {last} |")
 
 
 def _remove_time(ts_id: int) -> int:
