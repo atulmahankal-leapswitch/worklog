@@ -119,20 +119,104 @@ python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog project set-clickup \
 
 Then jump to step 7.
 
-#### 6b. Interactive / name modes
+#### 6b. Interactive / name modes — auto-match by name
 
-Display the current ClickUp mapping from step 1 (or "Not mapped yet.")
-and ask via `AskUserQuestion` (single-select):
+Display the current ClickUp mapping from step 1 (or "Not mapped yet.").
+If the user wants to keep the existing mapping, jump to step 7.
+Otherwise, **before showing any picker**, try to auto-match the
+project's local name to an existing ClickUp List.
+
+Fetch the full hierarchy once:
 
 ```
-question: "Map this project to a ClickUp Space?  (current: <…>)"
+mcp__claude_ai_ClickUp__clickup_get_workspace_hierarchy
+  max_depth: 2
+```
+
+Save `hierarchy.root.id` as `WORKSPACE_ID`. Walk the tree to find every
+List whose `name` matches `$CHOSEN_NAME` case-insensitively. For each
+match capture its Space id/name and Folder id/name (Folder may be empty).
+
+Then take **one of three branches** below depending on the match count.
+
+##### Exactly one match — confirm and save
+
+```
+question: "Found ClickUp List '<space>/<folder?>/<list>'. Use it?"
 options:
-  - "Yes — pick a Space (and optionally a List)"
-  - "No — leave as-is"
-  - "Clear the current mapping"   (only if a mapping exists)
+  - "Yes — use this mapping"
+  - "No — pick a different List"
+  - "Clear / skip ClickUp mapping for now"
 ```
 
-If **No** → step 7. If **Clear**:
+If **Yes** → save the resolved mapping with the same
+`worklog project set-clickup` call from 6a and jump to step 7.
+
+##### Multiple matches — disambiguate
+
+Build an `AskUserQuestion` listing every match as
+`<space name> / <folder name> / <list name>` so the user can pick the
+intended one. Then save and jump to step 7. (Also offer
+"Pick a different List" and "Clear / skip" as in the single-match case.)
+
+##### Zero matches — pick existing or create new
+
+```
+question: "No ClickUp List named '$CHOSEN_NAME' found. What do you want to do?"
+options:
+  - "Create a new List in ClickUp with this name"
+  - "Pick an existing List (different name)"
+  - "Skip ClickUp mapping for now"
+```
+
+If **Skip** → jump to step 7.
+
+If **Pick an existing List**, fall through to the "pick from picker"
+flow at the bottom of this section.
+
+If **Create**, drive the picker for the *destination*:
+
+1. `clickup_get_workspace_hierarchy` (`max_depth: 1`) → ask which
+   **Space** the new List should live in. Capture `SPACE_ID`,
+   `SPACE_NAME`.
+2. Ask: "Place the new List inside a Folder?"
+   - **No** → Folder fields stay empty. Create directly under the Space:
+     ```
+     mcp__claude_ai_ClickUp__clickup_create_list
+       space_id: "$SPACE_ID"
+       name: "$CHOSEN_NAME"
+     ```
+   - **Yes** → fetch `clickup_get_workspace_hierarchy` with
+     `space_ids: ["$SPACE_ID"]` and `max_depth: 1`, pick a Folder
+     (capture `FOLDER_ID`, `FOLDER_NAME`), then:
+     ```
+     mcp__claude_ai_ClickUp__clickup_create_list_in_folder
+       folder_id: "$FOLDER_ID"
+       name: "$CHOSEN_NAME"
+     ```
+3. Read back the new List's `id` as `LIST_ID` and use `$CHOSEN_NAME` as
+   `LIST_NAME`.
+4. Save the mapping via the same `worklog project set-clickup` call
+   from 6a. Jump to step 7.
+
+##### "Pick an existing List" — manual picker
+
+(Reached from any of the branches above when the user wants to choose
+manually.)
+
+1. `clickup_get_workspace_hierarchy` (`max_depth: 0`) → ask which
+   Space. Capture `SPACE_ID`, `SPACE_NAME`.
+2. `clickup_get_workspace_hierarchy` with `space_ids: ["$SPACE_ID"]`
+   and `max_depth: 2`. Present every reachable List as a single
+   `AskUserQuestion` labelled `<folder name> / <list name>` (or just
+   `<list name>` for direct-under-Space Lists). Capture `FOLDER_ID`,
+   `FOLDER_NAME` (empty if no Folder), and `LIST_ID`, `LIST_NAME`.
+3. Save with the same `worklog project set-clickup` call from 6a.
+
+##### "Clear" branch
+
+If the user picks "Clear / skip" anywhere and there was an existing
+mapping, run:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog project set-clickup \
@@ -143,16 +227,7 @@ python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog project set-clickup \
   --list-id "" --list-name ""
 ```
 
-…and step 7. Otherwise drive the Space picker, then (optionally) the
-List picker, exactly as in the previous version of this command:
-
-1. `clickup_get_workspace_hierarchy` (`max_depth: 0`) → pick Space →
-   capture `WORKSPACE_ID`, `SPACE_ID`, `SPACE_NAME`.
-2. Ask "pin a default List?". If yes,
-   `clickup_get_workspace_hierarchy` with `space_ids: ["$SPACE_ID"]`
-   and `max_depth: 2`, then show each List as
-   `<folder name> / <list name>`; capture `FOLDER_*` and `LIST_*`.
-3. Save with the same `worklog project set-clickup` call as in 6a.
+If there was no mapping to begin with, just jump to step 7.
 
 ### 7. Verify & wrap up
 
