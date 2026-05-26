@@ -61,6 +61,49 @@ def _file_url(path: str) -> str:
     return "file://" + quote(path, safe="/")
 
 
+_ANSI_RE = None  # lazy-compiled
+
+def _visible_width(s: str) -> int:
+    """Length of s ignoring ANSI colour codes and OSC 8 hyperlinks."""
+    global _ANSI_RE
+    if _ANSI_RE is None:
+        import re
+        _ANSI_RE = re.compile(
+            r"\x1b\[[0-9;]*m"                    # CSI colour
+            r"|\x1b\]8;[^\x07\x1b]*(?:\x07|\x1b\\)"  # OSC 8 open/close
+        )
+    return len(_ANSI_RE.sub("", s))
+
+
+def _render_table(headers, rows):
+    """Print a table — Unicode box-drawing in TTY, markdown when piped."""
+    widths = [_visible_width(h) for h in headers]
+    for row in rows:
+        for i, cell in enumerate(row):
+            widths[i] = max(widths[i], _visible_width(cell))
+
+    def pad(cell, w):
+        return cell + " " * (w - _visible_width(cell))
+
+    if _TTY:
+        top    = "┌─" + "─┬─".join("─" * w for w in widths) + "─┐"
+        mid    = "├─" + "─┼─".join("─" * w for w in widths) + "─┤"
+        bot    = "└─" + "─┴─".join("─" * w for w in widths) + "─┘"
+        def row_line(cells):
+            return "│ " + " │ ".join(pad(c, w) for c, w in zip(cells, widths)) + " │"
+        print(top)
+        print(row_line([_bold(h) for h in headers]))
+        print(mid)
+        for r in rows:
+            print(row_line(r))
+        print(bot)
+    else:
+        print("| " + " | ".join(headers) + " |")
+        print("|" + "|".join("-" * max(3, w + 2) for w in widths) + "|")
+        for r in rows:
+            print("| " + " | ".join(r) + " |")
+
+
 def parse_date(s: str | None) -> str:
     if not s or s == "today":
         return _date.today().isoformat()
@@ -134,26 +177,40 @@ def cmd_projects(a):
         print(json.dumps([dict(r) for r in rows], indent=2))
         return
     if not rows:
-        print("_no projects registered yet — use `worklog add project --name X --path /repo`_")
+        print(_italic("no projects registered yet — use "
+                      "`worklog project register --path <dir>`"))
         return
-    print("| #  | Project | Path | Path exists | Auto-log | ClickUp | Last active |")
-    print("|----|---------|------|-------------|----------|---------|-------------|")
+
+    table_rows = []
     for r in rows:
         if r["path"]:
-            exists = "yes" if _Path(r["path"]).exists() else "**no**"
-            path_cell = _link(f"`{r['path']}`", _file_url(r["path"]))
+            exists = _ok("yes") if _Path(r["path"]).exists() else _bold("no")
+            path_cell = _link(_code(r["path"]), _file_url(r["path"]))
         else:
             exists = "—"
             path_cell = "—"
-        autolog = "on" if r["auto_log"] else "off"
+        autolog = _ok("on") if r["auto_log"] else _dim("off")
         cu_parts = []
         if r["clickup_space_id"]:
-            cu_parts.append(f"space:`{r['clickup_space_id']}`")
+            cu_parts.append("space:" + _code(r["clickup_space_id"]))
         if r["clickup_list_id"]:
-            cu_parts.append(f"list:`{r['clickup_list_id']}`")
-        cu = " ".join(cu_parts) or "—"
-        last = r["last_active"] or "—"
-        print(f"| {r['id']} | {r['name']} | {path_cell} | {exists} | {autolog} | {cu} | {last} |")
+            cu_parts.append("list:" + _code(r["clickup_list_id"]))
+        cu = "  ".join(cu_parts) or _dim("—")
+        last = r["last_active"] or _dim("—")
+        table_rows.append([
+            str(r["id"]),
+            r["name"],
+            path_cell,
+            exists,
+            autolog,
+            cu,
+            last,
+        ])
+
+    _render_table(
+        ["#", "Project", "Path", "Path exists", "Auto-log", "ClickUp", "Last active"],
+        table_rows,
+    )
 
 
 def _remove_time(ts_id: int) -> int:
