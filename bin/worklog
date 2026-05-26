@@ -572,6 +572,66 @@ def cmd_update_status(a):
     print(f"task #{a.task_id} -> {a.status}")
 
 
+def cmd_rescan_titles(a):
+    """Re-title claude-cli timesheet rows whose task is a known resume
+    placeholder by re-scanning the project's transcripts."""
+    from lib import transcripts
+    target = parse_date(a.date)
+    placeholders = {"continue from where you left off", "continue", "resume"}
+
+    rows = db.list_timesheet(target)
+    if not rows:
+        print(f"no timesheet rows on {target}")
+        return 0
+
+    with db.connect() as c:
+        proj_path = {r["id"]: r["path"] for r in
+                     c.execute("SELECT id, path FROM projects")}
+
+    updated, kept, no_match = 0, 0, 0
+    for r in rows:
+        if r["source"] != "claude-cli":
+            kept += 1
+            continue
+        current = (r["task"] or "").strip().lower().rstrip(".!? ").strip()
+        if current not in placeholders:
+            kept += 1
+            continue
+        ppath = proj_path.get(r["project_id"])
+        if not ppath:
+            no_match += 1
+            continue
+        tdir = transcripts.transcript_dir(ppath)
+        if not tdir.is_dir():
+            no_match += 1
+            continue
+
+        new_title = None
+        for jsonl in sorted(tdir.glob("*.jsonl")):
+            for chunk in transcripts.chunk_sessions(jsonl):
+                start = chunk.start.astimezone()
+                if start.date().isoformat() != target:
+                    continue
+                if start.strftime("%H:%M") != r["since"]:
+                    continue
+                new_title = chunk.first_prompt
+                break
+            if new_title is not None:
+                break
+
+        normalised_new = (new_title or "").strip().lower().rstrip(".!? ").strip()
+        if not new_title or normalised_new in placeholders:
+            no_match += 1
+            continue
+
+        db.update_timesheet_task(r["id"], new_title)
+        print(f"  #{r['id']}: {new_title[:90]}")
+        updated += 1
+
+    print(f"\n{updated} retitled, {kept} kept (not a placeholder), "
+          f"{no_match} skipped (no matching session in transcripts)")
+
+
 def cmd_retitle(a):
     """Replace the task text of a row by id."""
     if a.kind == "time":
@@ -743,6 +803,12 @@ def build_parser() -> argparse.ArgumentParser:
     us.add_argument("status")
     us.add_argument("--remark", default=None)
     us.set_defaults(func=cmd_update_status)
+
+    rs = sub.add_parser("rescan-titles",
+                        help="re-title claude-cli timesheet rows whose task is a known resume placeholder, "
+                             "by re-extracting from the project's transcripts")
+    rs.add_argument("date", nargs="?", default="today")
+    rs.set_defaults(func=cmd_rescan_titles)
 
     rt = sub.add_parser("retitle",
                         help="replace the task text on a timesheet or tasks row by id")
