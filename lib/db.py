@@ -105,6 +105,9 @@ def _migrate(c: sqlite3.Connection):
     c.execute("CREATE INDEX IF NOT EXISTS idx_tasks_reference ON tasks(reference)")
     c.execute("CREATE INDEX IF NOT EXISTS idx_tasks_source ON tasks(source)")
 
+    if "clickup_space_id" not in cols:
+        c.execute("ALTER TABLE projects ADD COLUMN clickup_space_id TEXT")
+
 
 def init():
     with connect() as c:
@@ -215,6 +218,26 @@ def set_project_clickup_list(project: str, list_id: str):
         c.execute("UPDATE projects SET clickup_list_id=? WHERE id=?", (list_id, pid))
 
 
+def set_project_clickup_mapping(
+    project: str,
+    *,
+    space_id: Optional[str] = None,
+    list_id: Optional[str] = None,
+):
+    """Set Space and/or List ids for a project. Only non-None args are written;
+    pass an empty string to explicitly clear a field."""
+    if space_id is None and list_id is None:
+        return
+    with connect() as c:
+        pid = get_or_create_project(project, conn=c)
+        if space_id is not None:
+            c.execute("UPDATE projects SET clickup_space_id=? WHERE id=?",
+                      (space_id or None, pid))
+        if list_id is not None:
+            c.execute("UPDATE projects SET clickup_list_id=? WHERE id=?",
+                      (list_id or None, pid))
+
+
 def get_project(name: str) -> Optional[sqlite3.Row]:
     with connect() as c:
         return c.execute("SELECT * FROM projects WHERE name=?", (name,)).fetchone()
@@ -284,7 +307,8 @@ def list_projects_with_status() -> list[sqlite3.Row]:
     with connect() as c:
         return c.execute(
             """SELECT p.id, p.name, p.path, p.coordinator, p.git_repo,
-                      p.auto_log, p.clickup_list_id, p.created_at,
+                      p.auto_log, p.clickup_space_id, p.clickup_list_id,
+                      p.created_at,
                       (
                         SELECT MAX(d) FROM (
                           SELECT MAX(date) AS d FROM tasks      WHERE project_id = p.id
