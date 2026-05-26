@@ -1,6 +1,8 @@
 import time
 from datetime import date
 
+import pytest
+
 from lib import db
 
 
