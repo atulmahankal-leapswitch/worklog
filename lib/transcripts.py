@@ -25,6 +25,17 @@ _NOISE_PREFIXES = (
     "Caveat:",
 )
 
+# Auto-generated prompts Claude Code injects on session resume. Comparing
+# the full message (case-insensitive, trailing punctuation/whitespace
+# normalised) so a real user prompt that happens to start with "Continue"
+# is not filtered.
+_RESUME_PROMPTS = {
+    "continue from where you left off",
+    "continue",
+    "continue.",
+    "resume",
+}
+
 
 def encoded_project_dir(abs_path: str) -> str:
     """Map an absolute path to the Claude Code projects-dir name.
@@ -75,7 +86,14 @@ def get_timestamps(events: Iterable[dict]) -> list[datetime]:
 
 
 def _is_noise(text: str) -> bool:
-    return text.lstrip().startswith(_NOISE_PREFIXES)
+    stripped = text.lstrip()
+    if stripped.startswith(_NOISE_PREFIXES):
+        return True
+    # Normalise for resume-prompt comparison: lower-case, single line, trim
+    # trailing punctuation/whitespace.
+    first_line = stripped.splitlines()[0] if stripped else ""
+    normalised = first_line.lower().rstrip(".!? ").strip()
+    return normalised in _RESUME_PROMPTS
 
 
 def _event_text(e: dict) -> str:

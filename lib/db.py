@@ -423,6 +423,21 @@ def delete_timesheet(ts_id: int) -> bool:
         return cur.rowcount > 0
 
 
+def update_timesheet_task(ts_id: int, task: str) -> bool:
+    with connect() as c:
+        cur = c.execute("UPDATE timesheet SET task=? WHERE id=?", (task, ts_id))
+        return cur.rowcount > 0
+
+
+def update_task_text(task_id: int, task: str) -> bool:
+    with connect() as c:
+        cur = c.execute(
+            f"UPDATE tasks SET task=?, updated_at={_NOW_MS} WHERE id=?",
+            (task, task_id),
+        )
+        return cur.rowcount > 0
+
+
 def delete_task(task_id: int) -> bool:
     with connect() as c:
         cur = c.execute("DELETE FROM tasks WHERE id=?", (task_id,))

@@ -572,6 +572,19 @@ def cmd_update_status(a):
     print(f"task #{a.task_id} -> {a.status}")
 
 
+def cmd_retitle(a):
+    """Replace the task text of a row by id."""
+    if a.kind == "time":
+        ok = db.update_timesheet_task(a.id, a.task)
+        print(f"timesheet #{a.id} task updated" if ok
+              else f"timesheet #{a.id} not found")
+    else:
+        ok = db.update_task_text(a.id, a.task)
+        print(f"task #{a.id} task updated" if ok
+              else f"task #{a.id} not found")
+    return 0 if ok else 1
+
+
 def cmd_link_slack(a):
     db.set_task_slack_notified(a.task_id, a.message_ts)
     print(f"task #{a.task_id} marked slack-notified ({a.message_ts})")
@@ -730,6 +743,18 @@ def build_parser() -> argparse.ArgumentParser:
     us.add_argument("status")
     us.add_argument("--remark", default=None)
     us.set_defaults(func=cmd_update_status)
+
+    rt = sub.add_parser("retitle",
+                        help="replace the task text on a timesheet or tasks row by id")
+    rt_sub = rt.add_subparsers(dest="kind", required=True)
+    rt_time = rt_sub.add_parser("time")
+    rt_time.add_argument("id", type=int)
+    rt_time.add_argument("task")
+    rt_time.set_defaults(func=cmd_retitle)
+    rt_task = rt_sub.add_parser("task")
+    rt_task.add_argument("id", type=int)
+    rt_task.add_argument("task")
+    rt_task.set_defaults(func=cmd_retitle)
 
     ls = sub.add_parser("link-slack",
                         help="mark a task as notified to Slack at message_ts")

@@ -82,6 +82,20 @@ def test_latest_session_returns_most_recent_chunk(tmp_path):
     assert chunk.minutes == 5
 
 
+def test_first_user_prompt_skips_resume_prompts(tmp_path):
+    events = [
+        {"timestamp": _ts(2026, 5, 26, 9, 41),
+         "message": {"role": "user", "content": "Continue from where you left off."}},
+        {"timestamp": _ts(2026, 5, 26, 9, 42),
+         "message": {"role": "user", "content": "continue"}},
+        {"timestamp": _ts(2026, 5, 26, 9, 43),
+         "message": {"role": "user", "content": "deploy main branch to production"}},
+    ]
+    p = _write_transcript(tmp_path, events)
+    chunk = transcripts.latest_session(p)
+    assert chunk.first_prompt == "deploy main branch to production"
+
+
 def test_first_user_prompt_skips_command_noise(tmp_path):
     events = [
         {"timestamp": _ts(2026, 5, 26, 9, 41),
