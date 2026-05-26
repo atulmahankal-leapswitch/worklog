@@ -107,6 +107,8 @@ def _migrate(c: sqlite3.Connection):
 
     if "clickup_space_id" not in cols:
         c.execute("ALTER TABLE projects ADD COLUMN clickup_space_id TEXT")
+    if "clickup_workspace_id" not in cols:
+        c.execute("ALTER TABLE projects ADD COLUMN clickup_workspace_id TEXT")
 
 
 def init():
@@ -221,15 +223,19 @@ def set_project_clickup_list(project: str, list_id: str):
 def set_project_clickup_mapping(
     project: str,
     *,
+    workspace_id: Optional[str] = None,
     space_id: Optional[str] = None,
     list_id: Optional[str] = None,
 ):
-    """Set Space and/or List ids for a project. Only non-None args are written;
-    pass an empty string to explicitly clear a field."""
-    if space_id is None and list_id is None:
+    """Set Workspace / Space / List ids for a project. Only non-None args are
+    written; pass an empty string to explicitly clear a field."""
+    if workspace_id is None and space_id is None and list_id is None:
         return
     with connect() as c:
         pid = get_or_create_project(project, conn=c)
+        if workspace_id is not None:
+            c.execute("UPDATE projects SET clickup_workspace_id=? WHERE id=?",
+                      (workspace_id or None, pid))
         if space_id is not None:
             c.execute("UPDATE projects SET clickup_space_id=? WHERE id=?",
                       (space_id or None, pid))
@@ -307,8 +313,8 @@ def list_projects_with_status() -> list[sqlite3.Row]:
     with connect() as c:
         return c.execute(
             """SELECT p.id, p.name, p.path, p.coordinator, p.git_repo,
-                      p.auto_log, p.clickup_space_id, p.clickup_list_id,
-                      p.created_at,
+                      p.auto_log, p.clickup_workspace_id, p.clickup_space_id,
+                      p.clickup_list_id, p.created_at,
                       (
                         SELECT MAX(d) FROM (
                           SELECT MAX(date) AS d FROM tasks      WHERE project_id = p.id

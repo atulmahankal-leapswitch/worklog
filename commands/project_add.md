@@ -65,7 +65,7 @@ If the user picks **No**, skip to step 7. If **Clear**, run:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog project set-clickup \
-  --name "<name>" --space-id "" --list-id ""
+  --name "<name>" --workspace-id "" --space-id "" --list-id ""
 ```
 
 …and skip to step 7.
@@ -78,6 +78,10 @@ python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog project set-clickup \
 mcp__claude_ai_ClickUp__clickup_get_workspace_hierarchy
   max_depth: 0
 ```
+
+The response carries `hierarchy.root.id` — that's the **workspace id**.
+Save it as `WORKSPACE_ID`; we'll need it to build clickable Space/List
+URLs in `/worklog:projects`.
 
 Build an `AskUserQuestion` from the returned Spaces (≤ 4 per question;
 batch if needed). Each option's `description` should include the Space
@@ -94,7 +98,8 @@ If **No**, set the mapping with just the Space:
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog project set-clickup \
-  --name "<name>" --space-id "$SPACE_ID" --list-id ""
+  --name "<name>" --workspace-id "$WORKSPACE_ID" \
+  --space-id "$SPACE_ID" --list-id ""
 ```
 
 If **Yes**, fetch Folders + Lists in that Space:
@@ -110,7 +115,8 @@ Present every reachable List as an `AskUserQuestion` (label
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog project set-clickup \
-  --name "<name>" --space-id "$SPACE_ID" --list-id "<chosen list id>"
+  --name "<name>" --workspace-id "$WORKSPACE_ID" \
+  --space-id "$SPACE_ID" --list-id "<chosen list id>"
 ```
 
 ### 7. Verify & wrap up
