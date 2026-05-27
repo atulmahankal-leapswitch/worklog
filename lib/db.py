@@ -109,6 +109,10 @@ def _migrate(c: sqlite3.Connection):
         c.execute("ALTER TABLE projects ADD COLUMN clickup_space_id TEXT")
     if "clickup_workspace_id" not in cols:
         c.execute("ALTER TABLE projects ADD COLUMN clickup_workspace_id TEXT")
+
+    ts_cols = {r["name"] for r in c.execute("PRAGMA table_info(timesheet)")}
+    if "clickup_task_id" not in ts_cols:
+        c.execute("ALTER TABLE timesheet ADD COLUMN clickup_task_id TEXT")
     if "clickup_space_name" not in cols:
         c.execute("ALTER TABLE projects ADD COLUMN clickup_space_name TEXT")
     if "clickup_folder_id" not in cols:
@@ -178,12 +182,25 @@ def list_tasks(date: str) -> list[sqlite3.Row]:
 def list_timesheet(date: str) -> list[sqlite3.Row]:
     with connect() as c:
         return c.execute(
-            """SELECT ts.*, p.name AS project
+            """SELECT ts.*, p.name AS project,
+                      p.clickup_list_name AS clickup_list_name,
+                      p.clickup_list_id   AS project_clickup_list_id
                FROM timesheet ts LEFT JOIN projects p ON p.id = ts.project_id
                WHERE ts.date = ?
                ORDER BY ts.since""",
             (date,),
         ).fetchall()
+
+
+def set_timesheet_clickup_id(ts_id: int, clickup_task_id: str):
+    with connect() as c:
+        c.execute("UPDATE timesheet SET clickup_task_id=? WHERE id=?",
+                  (clickup_task_id, ts_id))
+
+
+def list_timesheet_pending(date: str) -> list[sqlite3.Row]:
+    """Timesheet rows for a date that have NOT yet been pushed to ClickUp."""
+    return [r for r in list_timesheet(date) if not r["clickup_task_id"]]
 
 
 def add_timesheet(

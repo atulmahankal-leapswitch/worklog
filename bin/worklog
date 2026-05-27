@@ -479,6 +479,8 @@ def cmd_show(a):
             "task": r["task"],
             "ref": r["ref"],
             "source": r["source"],
+            "clickup_list_name": r["clickup_list_name"],
+            "clickup_task_id": r["clickup_task_id"],
         })
         total_min += r["minutes"]
     out["totals"] = {
@@ -506,9 +508,13 @@ def cmd_show(a):
     if ts:
         print(_subhead("Timesheet"))
         for r in out["timesheet"]:
+            cu_list = (f" → {r['clickup_list_name']}"
+                       if r["clickup_list_name"] else f" → {_dim('unmapped')}")
+            state = (_dim(f"[cu:{r['clickup_task_id']}]")
+                     if r["clickup_task_id"] else _ok("[new]"))
             print(f"- {_code('#' + str(r['id']))}  {_dim(r['source'] or 'manual')}  "
                   f"{r['since']}–{r['upto']} ({r['duration']})  "
-                  f"{r['project']} | {r['task']}")
+                  f"{r['project']}{cu_list}  {state} | {r['task']}")
         print(f"\n{_ok('Total: ' + out['totals']['duration_logged'])}")
     else:
         print(_italic("no time entries"))
@@ -540,6 +546,27 @@ def cmd_list_pending(a):
 def cmd_link_task(a):
     db.update_task_clickup_id(a.task_id, a.clickup_id)
     print(f"task #{a.task_id} linked to ClickUp {a.clickup_id}")
+
+
+def cmd_list_timesheet_pending(a):
+    d = parse_date(a.date)
+    rows = db.list_timesheet_pending(d)
+    print(json.dumps([{
+        "id": r["id"],
+        "since": r["since"],
+        "upto": r["upto"],
+        "duration": _fmt_min(r["minutes"]),
+        "minutes": r["minutes"],
+        "project": r["project"],
+        "task": r["task"],
+        "clickup_list_id": r["project_clickup_list_id"],
+        "clickup_list_name": r["clickup_list_name"],
+    } for r in rows], indent=2))
+
+
+def cmd_link_timesheet(a):
+    db.set_timesheet_clickup_id(a.ts_id, a.clickup_id)
+    print(f"timesheet #{a.ts_id} linked to ClickUp task {a.clickup_id}")
 
 
 def cmd_tasks_by_source(a):
@@ -836,6 +863,17 @@ def build_parser() -> argparse.ArgumentParser:
     lt.add_argument("task_id", type=int)
     lt.add_argument("clickup_id")
     lt.set_defaults(func=cmd_link_task)
+
+    ltp = sub.add_parser("list-timesheet-pending",
+                         help="JSON list of timesheet rows for a date not yet pushed to ClickUp")
+    ltp.add_argument("date", nargs="?", default="today")
+    ltp.set_defaults(func=cmd_list_timesheet_pending)
+
+    llt = sub.add_parser("link-timesheet",
+                         help="record the ClickUp task id a timesheet row was pushed to")
+    llt.add_argument("ts_id", type=int)
+    llt.add_argument("clickup_id")
+    llt.set_defaults(func=cmd_link_timesheet)
 
     tbs = sub.add_parser("tasks-by-source",
                          help="list all tasks (any date) with a given source tag")

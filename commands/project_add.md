@@ -15,9 +15,12 @@ overloaded — use whichever form fits:
 | all digits (e.g. `901611667227`)           | treat as a **ClickUp List id**; resolve hierarchy from ClickUp   |
 | contains `/` (e.g. `Core Team / Application Developement / Hostbill`) | treat as a **breadcrumb**: `<Space> / [<Folder> /] <List>` |
 
-The shortcut forms set the ClickUp Space/Folder/List in one go and use
-the resolved **list name** as the project's local name (unless a row
-already exists at this cwd, in which case the existing name is kept).
+**The project name mirrors its ClickUp List** — the command does not
+ask for a separate name. Whatever List you map (by id, breadcrumb, or
+picker) becomes the project's local name, so `/worklog:projects` and
+`/worklog:push` line up 1:1 with ClickUp. A name is only invented (from
+the cwd folder) when you deliberately register a folder *without* a
+ClickUp mapping.
 
 Safe to re-run on an existing project — `project register` keys on the
 path, so it updates in place and never creates a duplicate.
@@ -81,18 +84,27 @@ Set:
 - `FOLDER_ID`, `FOLDER_NAME` (may be empty)
 - `LIST_ID`, `LIST_NAME`
 
-### 4. Pick the project's local name
+### 4. Decide the project's local name
 
-- If `MODE=name` → use `$ARGUMENTS`.
-- Else if a row already exists at this cwd → keep the existing name.
-- Else if `MODE` resolved a list → use `LIST_NAME` as the default. Ask:
-  "Use **`$LIST_NAME`** as the project name? (Enter to accept, or type
-  a different name.)"
-- Else (interactive, no existing row) → ask:
-  "Register this folder as project **`$DEFAULT_NAME`**? (Enter to
-  accept, or type a different name.)"
+**The project name mirrors the ClickUp List — don't ask for it
+separately.** Resolve `CHOSEN_NAME` in this order, no prompt:
 
-Store the answer as `CHOSEN_NAME`.
+1. A ClickUp List was resolved (any mode that produced `LIST_NAME`, or
+   the interactive picker in step 6) → `CHOSEN_NAME = LIST_NAME`.
+2. `MODE=name` (user passed plain text and no list) → use `$ARGUMENTS`.
+3. A row already exists at this cwd → keep its existing name.
+4. Nothing else → fall back to `$DEFAULT_NAME` (the cwd folder name).
+
+Only the no-ClickUp fallback (#3/#4) uses a non-list name. Whenever a
+List is chosen, the project is named exactly after it — so
+`/worklog:projects` and `/worklog:push` line up 1:1 with ClickUp.
+
+> Note: in the interactive picker path (step 6b) the List isn't known
+> until after the picker runs. In that case do step 5's register with a
+> temporary name (`$DEFAULT_NAME`), then **rename** to the chosen List
+> name as part of the `set-clickup` step by calling `project register`
+> again with `--name "$LIST_NAME"` (register keys on path, so it just
+> renames in place).
 
 ### 5. Register (or update) the project
 
