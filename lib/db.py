@@ -412,7 +412,7 @@ def list_projects_with_status() -> list[sqlite3.Row]:
                         )
                       ) AS last_active
                FROM projects p
-               ORDER BY p.name"""
+               ORDER BY p.name COLLATE NOCASE"""
         ).fetchall()
 
 
