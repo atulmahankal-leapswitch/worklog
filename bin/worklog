@@ -638,6 +638,50 @@ def cmd_rescan_titles(a):
           f"{no_match} skipped (no matching session in transcripts)")
 
 
+def cmd_session_prompts(a):
+    """For each claude-cli timesheet row on a date, dump the real user
+    prompts of its session chunk as JSON. A model reads this to write a
+    concise task summary, then calls `worklog retitle time <id> ...`."""
+    from lib import transcripts
+    target = parse_date(a.date)
+    rows = db.list_timesheet(target)
+    with db.connect() as c:
+        proj_path = {r["id"]: r["path"] for r in
+                     c.execute("SELECT id, path FROM projects")}
+
+    out = []
+    for r in rows:
+        if r["source"] != "claude-cli":
+            continue
+        prompts = []
+        ppath = proj_path.get(r["project_id"])
+        if ppath:
+            tdir = transcripts.transcript_dir(ppath)
+            if tdir.is_dir():
+                done = False
+                for jsonl in sorted(tdir.glob("*.jsonl")):
+                    for chunk in transcripts.chunk_sessions(jsonl):
+                        start = chunk.start.astimezone()
+                        if start.date().isoformat() != target:
+                            continue
+                        if start.strftime("%H:%M") != r["since"]:
+                            continue
+                        prompts = transcripts.user_prompts(chunk.events)
+                        done = True
+                        break
+                    if done:
+                        break
+        out.append({
+            "id": r["id"],
+            "project": r["project"],
+            "since": r["since"],
+            "upto": r["upto"],
+            "current_task": r["task"],
+            "prompts": prompts,
+        })
+    print(json.dumps(out, indent=2))
+
+
 def cmd_retitle(a):
     """Replace the task text of a row by id."""
     if a.kind == "time":
@@ -809,6 +853,12 @@ def build_parser() -> argparse.ArgumentParser:
     us.add_argument("status")
     us.add_argument("--remark", default=None)
     us.set_defaults(func=cmd_update_status)
+
+    sp = sub.add_parser("session-prompts",
+                        help="JSON dump of each claude-cli row's real user prompts "
+                             "(for model-driven retitling)")
+    sp.add_argument("date", nargs="?", default="today")
+    sp.set_defaults(func=cmd_session_prompts)
 
     rs = sub.add_parser("rescan-titles",
                         help="re-title claude-cli timesheet rows whose task is a known resume placeholder, "

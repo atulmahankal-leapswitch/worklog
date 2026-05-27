@@ -157,6 +157,28 @@ def test_first_user_prompt_handles_block_content(tmp_path):
     assert chunk.first_prompt == "look at PR#42"
 
 
+def test_user_prompts_collects_only_real_input(tmp_path):
+    events = [
+        {"timestamp": _ts(2026, 5, 27, 12, 42), "isMeta": True,
+         "message": {"role": "user", "content": "Continue from where you left off."}},
+        {"timestamp": _ts(2026, 5, 27, 12, 43),
+         "message": {"role": "user", "content": "Client: #25 - Supriya Mahankal\nTDS 2%"}},
+        {"timestamp": _ts(2026, 5, 27, 12, 44),
+         "message": {"role": "user", "content": "<local-command-stdout>Compacted</local-command-stdout>"}},
+        {"timestamp": _ts(2026, 5, 27, 12, 45),
+         "message": {"role": "user", "content": "Always compute TDS on invoice subtotal"}},
+        {"timestamp": _ts(2026, 5, 27, 12, 46),
+         "message": {"role": "user", "content": ""}},
+    ]
+    p = _write_transcript(tmp_path, events)
+    chunk = transcripts.latest_session(p)
+    prompts = transcripts.user_prompts(chunk.events)
+    assert prompts == [
+        "Client: #25 - Supriya Mahankal\nTDS 2%",
+        "Always compute TDS on invoice subtotal",
+    ]
+
+
 def test_empty_transcript_returns_none(tmp_path):
     p = tmp_path / "empty.jsonl"
     p.write_text("")

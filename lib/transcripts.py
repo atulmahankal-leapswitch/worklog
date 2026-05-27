@@ -116,6 +116,26 @@ def _event_text(e: dict) -> str:
     return ""
 
 
+def user_prompts(events: Iterable[dict], limit: int = 25,
+                 max_chars: int = 600) -> list[str]:
+    """All real (non-meta, non-noise) user prompts in the events, in order.
+
+    Used by `worklog session-prompts` so a model can read a session's real
+    input and write a concise task summary. Each prompt is truncated to
+    `max_chars`; at most `limit` prompts are returned."""
+    out: list[str] = []
+    for e in events:
+        if e.get("isMeta") is True:
+            continue
+        text = _event_text(e)
+        if not text or _is_noise(text):
+            continue
+        out.append(text[:max_chars])
+        if len(out) >= limit:
+            break
+    return out
+
+
 def first_user_prompt(events: Iterable[dict]) -> str:
     """First real user prompt from the events (truncated to 200 chars).
 
