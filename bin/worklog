@@ -602,8 +602,8 @@ def cmd_update_status(a):
 def cmd_rescan_titles(a):
     """Re-title claude-cli timesheet rows whose current task is Claude Code
     boilerplate (resume prompt, command caveat, interrupt marker, compaction
-    notice, etc.) by re-scanning the project's transcripts."""
-    from lib import transcripts
+    notice, etc.) by re-scanning the project's transcripts and git history."""
+    from lib import git, transcripts
     target = parse_date(a.date)
 
     rows = db.list_timesheet(target)
@@ -627,41 +627,66 @@ def cmd_rescan_titles(a):
         if r["source"] != "claude-cli":
             kept += 1
             continue
-        if not needs_rescan(r["task"] or ""):
+        current = r["task"] or ""
+        ppath = proj_path.get(r["project_id"])
+
+        # Locate the matching session chunk in the project's transcripts.
+        matched_chunk = None
+        if ppath:
+            tdir = transcripts.transcript_dir(ppath)
+            if tdir.is_dir():
+                for jsonl in sorted(tdir.glob("*.jsonl")):
+                    for chunk in transcripts.chunk_sessions(jsonl):
+                        start = chunk.start.astimezone()
+                        if start.date().isoformat() != target:
+                            continue
+                        if start.strftime("%H:%M") != r["since"]:
+                            continue
+                        matched_chunk = chunk
+                        break
+                    if matched_chunk is not None:
+                        break
+
+        commits = []
+        transcript_title = ""
+        if matched_chunk is not None and ppath:
+            commits = git.commit_subjects(
+                ppath,
+                matched_chunk.start.astimezone(),
+                matched_chunk.end.astimezone(),
+            )
+            transcript_title = matched_chunk.first_prompt
+        git_title = git.summarise(commits)
+
+        # Decide the new title:
+        #   1. git commits in the session window always win.
+        #   2. else, if the current title is noise, fall back to the
+        #      transcript's first real prompt → "Claude Code session".
+        #   3. else (real current title, no commits) keep it.
+        if git_title:
+            new_title = git_title
+        elif needs_rescan(current):
+            if transcript_title and not needs_rescan(transcript_title):
+                new_title = transcript_title
+            else:
+                new_title = "Claude Code session"
+        else:
             kept += 1
             continue
-        ppath = proj_path.get(r["project_id"])
-        if not ppath:
-            no_match += 1
-            continue
-        tdir = transcripts.transcript_dir(ppath)
-        if not tdir.is_dir():
-            no_match += 1
+
+        if new_title == current:
+            kept += 1
             continue
 
-        new_title = None
-        for jsonl in sorted(tdir.glob("*.jsonl")):
-            for chunk in transcripts.chunk_sessions(jsonl):
-                start = chunk.start.astimezone()
-                if start.date().isoformat() != target:
-                    continue
-                if start.strftime("%H:%M") != r["since"]:
-                    continue
-                new_title = chunk.first_prompt
-                break
-            if new_title is not None:
-                break
-
-        # If the transcript chunk yields nothing useful either, fall back
-        # to a neutral placeholder so the noisy old title doesn't survive.
-        if not new_title or needs_rescan(new_title):
-            new_title = "Claude Code session"
+        if matched_chunk is None and not git_title:
+            no_match += 1
+            continue
 
         db.update_timesheet_task(r["id"], new_title)
         print(f"  #{r['id']}: {new_title[:90]}")
         updated += 1
 
-    print(f"\n{updated} retitled, {kept} kept (not a placeholder), "
+    print(f"\n{updated} retitled, {kept} kept, "
           f"{no_match} skipped (no matching session in transcripts)")
 
 

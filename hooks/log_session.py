@@ -23,7 +23,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-from lib import db, transcripts  # noqa: E402
+from lib import db, git, transcripts  # noqa: E402
 
 MIN_DURATION_SEC = 120
 
@@ -56,6 +56,13 @@ def main() -> int:
     start = chunk.start.astimezone()
     end = chunk.end.astimezone()
 
+    # Prefer git commit subjects from this session window as the title —
+    # it's the cleanest "what got done" signal. Fall back to the first
+    # real user prompt only when no commits exist.
+    commits = git.commit_subjects(match["path"], start, end) if match["path"] else []
+    task = git.summarise(commits) or chunk.first_prompt
+    ref = f"claude-cli:{reason}" + (":git" if commits else "")
+
     try:
         db.add_timesheet(
             date=start.date().isoformat(),
@@ -63,8 +70,8 @@ def main() -> int:
             upto=end.strftime("%H:%M"),
             minutes=chunk.minutes,
             project=project,
-            task=chunk.first_prompt,
-            ref=f"claude-cli:{reason}",
+            task=task,
+            ref=ref,
             source="claude-cli",
         )
     except Exception as e:
