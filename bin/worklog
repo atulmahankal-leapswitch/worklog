@@ -692,9 +692,10 @@ def cmd_rescan_titles(a):
 
 def cmd_session_prompts(a):
     """For each claude-cli timesheet row on a date, dump the real user
-    prompts of its session chunk as JSON. A model reads this to write a
-    concise task summary, then calls `worklog retitle time <id> ...`."""
-    from lib import transcripts
+    prompts AND the git commit subjects authored during the session
+    window. A model reads this to write a concise one-line task summary,
+    then calls `worklog retitle time <id> ...`."""
+    from lib import git, transcripts
     target = parse_date(a.date)
     rows = db.list_timesheet(target)
     with db.connect() as c:
@@ -706,7 +707,9 @@ def cmd_session_prompts(a):
         if r["source"] != "claude-cli":
             continue
         prompts = []
+        commits = []
         ppath = proj_path.get(r["project_id"])
+        matched_chunk = None
         if ppath:
             tdir = transcripts.transcript_dir(ppath)
             if tdir.is_dir():
@@ -718,17 +721,25 @@ def cmd_session_prompts(a):
                             continue
                         if start.strftime("%H:%M") != r["since"]:
                             continue
+                        matched_chunk = chunk
                         prompts = transcripts.user_prompts(chunk.events)
                         done = True
                         break
                     if done:
                         break
+        if matched_chunk is not None and ppath:
+            commits = git.commit_subjects(
+                ppath,
+                matched_chunk.start.astimezone(),
+                matched_chunk.end.astimezone(),
+            )
         out.append({
             "id": r["id"],
             "project": r["project"],
             "since": r["since"],
             "upto": r["upto"],
             "current_task": r["task"],
+            "commits": commits,
             "prompts": prompts,
         })
     print(json.dumps(out, indent=2))

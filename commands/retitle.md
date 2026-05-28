@@ -1,66 +1,80 @@
 ---
-description: Rewrite auto-logged session titles into concise summaries of what was actually done, by reading each session's real prompts
+description: Rewrite auto-logged session titles into concise one-line summaries — prefers git commit subjects, falls back to real user prompts
 argument-hint: "[today|yesterday|YYYY-MM-DD]"
 ---
 
 Upgrade the task titles of auto-logged (`claude-cli`) timesheet rows for
-`$ARGUMENTS` (default `today`) from raw first-prompt text into short,
-meaningful summaries of what was actually accomplished.
+`$ARGUMENTS` (default `today`) into short, meaningful summaries of what
+was actually accomplished.
 
-The SessionEnd hook can only grab the first real prompt, which is often
-a pasted data block or a vague opener. This command reads each session's
-full set of real prompts and lets you (the model) write a proper title.
+The SessionEnd hook concatenates the session's git commit subjects
+(`A; B (+N more)`); for sessions with many commits or long subjects
+that's noisy. This command reads the **full list of commit subjects +
+real user prompts** for each session and lets you (the model) write a
+true one-line summary.
 
 ## Steps
 
-### 1. Pull the sessions and their prompts
+### 1. Pull the sessions with their commits + prompts
 
 ```bash
 python3 ${CLAUDE_PLUGIN_ROOT}/bin/worklog session-prompts ${ARGUMENTS:-today}
 ```
 
-This returns a JSON array; each element is:
+Each element looks like:
 
 ```json
 {
-  "id": 15,
-  "project": "hostbill_tds_mode",
-  "since": "12:42",
-  "upto": "13:11",
-  "current_task": "Client: #25 - Supriya Mahankal",
-  "prompts": ["Client: #25 - Supriya Mahankal\nTDS Percentage: 2 …",
-              "Always compute TDS on invoice subtotal", "…"]
+  "id": 19,
+  "project": "CloudPe Website",
+  "since": "17:58",
+  "upto": "18:03",
+  "current_task": "Move /resources/compare → /compare …; Bind wrangler …",
+  "commits": [
+    "Move /resources/compare → /compare with -alternative slugs + home Product schema",
+    "Bind wrangler dev to 0.0.0.0 in npm run preview for LAN access",
+    "Fix flaky preview port"
+  ],
+  "prompts": ["is local repo clean?", "remove the duplicated…", "…"]
 }
 ```
 
 If the array is empty, print "No auto-logged sessions for <date>." and stop.
 
-### 2. Summarise each session
+### 2. Write a true one-line summary per session
 
-For every element, read its `prompts` array and write a **concise task
-title** — what the session actually accomplished, in the user's own
-terms where possible:
+For every element, **prefer commits over prompts** when summarising:
 
-- Aim for ≤ 10 words, imperative or noun-phrase (e.g. "Always compute
-  TDS on invoice subtotal", "Squash-merge backup-billing to main").
-- Prefer the prompt(s) that describe the *goal* or *change*, not pasted
-  data, logs, or yes/no replies.
-- If several prompts cover distinct tasks, join the top 2 with "; ".
-- If the prompts genuinely contain no actionable intent, keep the
-  existing `current_task` (or use "Claude Code session").
+- **If `commits` is non-empty** — read all commit subjects and write a
+  single ≤ 12-word summary that captures the *overall theme* of the
+  session. Examples:
+  - 3 commits about `/compare` routing → "Move /resources/compare to /compare with home schema"
+  - mixed bag (route move + LAN binding + flaky-port fix) →
+    "Compare-page rework and dev-server LAN binding"
+  - one commit → reuse its subject verbatim if it's already concise,
+    else compress.
+- **Else if `prompts` has actionable content** — summarise from there.
+- **Else** — keep `current_task` (or use "Claude Code session").
+
+Rules:
+- ≤ 12 words, no markdown, no trailing punctuation, no quotes around
+  the title.
+- Use the user's terminology (paths, feature names, ids) verbatim where
+  possible.
+- Don't invent details that aren't in commits or prompts.
 
 ### 3. Show the proposed retitles for confirmation
 
 Present a compact before/after table:
 
 ```
-| #   | Project            | Old title                       | New title                              |
-|-----|--------------------|---------------------------------|----------------------------------------|
-| 15  | hostbill_tds_mode  | Client: #25 - Supriya Mahankal  | Always compute TDS on invoice subtotal |
+| #   | Project          | Old title                                | New title                                |
+|-----|------------------|------------------------------------------|------------------------------------------|
+| 19  | CloudPe Website  | Move /resources/compare → /compare …; …  | Move compare routes and bind dev to LAN  |
 ```
 
-Ask the user: "Apply these retitles?" (Yes / Edit some / No). If the
-user wants to edit, let them adjust individual titles before applying.
+Ask the user: "Apply these retitles?" (Yes / Edit some / No). If they
+want to edit, let them adjust individual titles before applying.
 
 ### 4. Apply
 
@@ -80,10 +94,10 @@ Render as-is.
 
 ## Notes
 
-- This only touches `claude-cli` rows — manual entries and calendar rows
-  are left alone.
-- Idempotent in spirit: re-running lets you refine titles further; it
-  never creates or deletes rows.
-- For a purely mechanical pass (no model summarisation — just strip
-  Claude Code boilerplate and fall back to the first real prompt), use
+- Only touches `claude-cli` rows; manual entries and calendar rows are
+  left alone.
+- Idempotent — re-running lets you refine titles further; it never
+  creates or deletes rows.
+- For a purely mechanical pass (just refresh from git commits or strip
+  Claude Code boilerplate, no model summarisation), use
   `worklog rescan-titles <date>` instead.
